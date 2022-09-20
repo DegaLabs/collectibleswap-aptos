@@ -1,0 +1,9 @@
+{
+  "name": "collectibleswap-aptos",
+  "version": "0.1.1",
+  "scripts": {
+    "move:init": "aptos init",
+    "move:compile": "aptos move compile --package-dir . --save-metadata",
+    "move:publish": "aptos move publish --package-dir ."
+  }
+}

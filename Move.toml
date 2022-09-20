@@ -1,0 +1,21 @@
+[package]
+name = "collectibleswap"
+version = "0.1.0"
+license = "MIT"
+
+[addresses]
+collectibleswap ="0x347c4ef2c85ca56fb70dc914c24de14a9caded800add3fcf2d450bcb618016ff"
+std="0x1"
+aptos_framework="0x1"
+aptos_std="0x1"
+aptos_token="0x3"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-framework/", rev="aptos-cli-v0.3.3" }
+AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-stdlib/", rev="aptos-cli-v0.3.3" }
+AptosToken = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-token/", rev="aptos-cli-v0.3.3" }
+
+[dependencies.Movemate]
+git = "https://github.com/pentagonxyz/movemate.git"
+subdir = "aptos"
+rev = "devnet"
