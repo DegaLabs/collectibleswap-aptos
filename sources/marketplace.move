@@ -15,6 +15,7 @@ module collectibleswap::marketplace {
     use std::option::Option;
     use std::option;
     use movemate::math;
+    use movemate::u256;
 
     const ESELLER_CAN_NOT_BE_BUYER: u64 = 1;
     const FEE_DENOMINATOR: u64 = 10000;
@@ -26,11 +27,16 @@ module collectibleswap::marketplace {
     const INVALID_INPUT_TOKENS: u64 = 1001;
     const EMPTY_NFTS_INPUT: u64 = 1002;
     const PAIR_NOT_EXISTS: u64 = 1003;
+    const INVALID_POOL_COLLECTION: u64 = 1004;
+    const LP_MUST_GREATER_THAN_ZERO: u64 = 1005;
+    const INTERNAL_ERROR_HANDLING_LIQUIDITY: u64 = 1006;
+    const LIQUIDITY_VALUE_TOO_LOW: u64 = 1007;
 
     struct Pool<phantom CoinType> has key {
         coin_amount: Coin<CoinType>,
         collection: String,
         tokens: TableWithLength<token::TokenId, token::Token>,
+        token_ids_list: vector<token::TokenId>,
         mint_capability: MintCapability<LiquidityCoin<CoinType>>,
         freeze_capability: FreezeCapability<LiquidityCoin<CoinType>>,
         burn_capability: BurnCapability<LiquidityCoin<CoinType>>,
@@ -87,6 +93,7 @@ module collectibleswap::marketplace {
             coin_amount: c,
             collection,
             tokens: table_with_length::new(),
+            token_ids_list: vector::empty(),
             mint_capability,
             freeze_capability,
             burn_capability,
@@ -109,6 +116,7 @@ module collectibleswap::marketplace {
         while (i < count) {
             let token_id = token::create_token_id_raw(*vector::borrow<address>(token_creators, i), collection, *vector::borrow<String>(token_names, i), property_version);
             let token = token::withdraw_token(account, token_id, 1);
+            vector::push_back(&mut pool.token_ids_list, token_id);
             table_with_length::add(&mut pool.tokens, token_id, token);
             i = i + 1;
         }
@@ -141,6 +149,8 @@ module collectibleswap::marketplace {
 
         let pool = borrow_global_mut<Pool<CoinType>>(@collectibleswap);
 
+        assert!(pool.collection == collection, INVALID_POOL_COLLECTION);
+
         // compute coin amount
         let added_token_count = vector::length(token_names);
         let coin_amount = added_token_count * pool.spot_price;
@@ -170,6 +180,69 @@ module collectibleswap::marketplace {
                                     token_creators: vector<address>,
                                     property_version: u64) acquires Pool {
         add_liquidity<CoinType>(account, collection, &token_names, &token_creators, property_version)
+    }
+
+    public fun remove_liquidity<CoinType> (
+                                    account: &signer,
+                                    collection: String, 
+                                    lp_amount: u64) acquires Pool {
+        assert!(exists<Pool<CoinType>>(@collectibleswap), PAIR_NOT_EXISTS); 
+        assert!(lp_amount > 0, LP_MUST_GREATER_THAN_ZERO);
+
+        let pool = borrow_global_mut<Pool<CoinType>>(@collectibleswap);
+
+        assert!(pool.collection == collection, INVALID_POOL_COLLECTION);
+
+        let lp_coin = coin::withdraw<LiquidityCoin<CoinType>>(account, lp_amount);
+        let lp_supply_option = coin::supply<LiquidityCoin<CoinType>>();
+        let lp_supply = (option::extract<u128>(&mut lp_supply_option) as u64);
+        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        let withdrawnable_coin_u256 = u256::mul(
+                        u256::mul(u256::from_u64((current_token_count_in_pool as u64)), u256::from_u64(pool.spot_price)),
+                        u256::from_u64(lp_amount)
+                    );
+        withdrawnable_coin_u256 = u256::div(withdrawnable_coin_u256, u256::from_u64(lp_supply));
+        let withdrawnable_coin_amount = u256::as_u64(withdrawnable_coin_u256);
+
+        let num_nfts_to_withdraw = current_token_count_in_pool * lp_amount / lp_supply;
+        let value_in_fraction_nft: u64 = 0;
+
+        if (num_nfts_to_withdraw * lp_supply != lp_amount * current_token_count_in_pool) {
+            num_nfts_to_withdraw = num_nfts_to_withdraw + 1;
+
+            // TODO: get buy info
+            let new_spot_price = pool.spot_price;
+            value_in_fraction_nft = (num_nfts_to_withdraw - 1) * pool.spot_price + 1 * new_spot_price;
+            assert!(value_in_fraction_nft >= withdrawnable_coin_amount, INTERNAL_ERROR_HANDLING_LIQUIDITY);
+            value_in_fraction_nft = value_in_fraction_nft - withdrawnable_coin_amount;
+        };
+
+        assert!(withdrawnable_coin_amount >= value_in_fraction_nft, LIQUIDITY_VALUE_TOO_LOW);
+        withdrawnable_coin_amount = withdrawnable_coin_amount - value_in_fraction_nft;
+
+        coin::burn(lp_coin, &pool.burn_capability);
+        //get token id list
+        let i = 0; 
+        while (i < num_nfts_to_withdraw) {
+            let token_id = vector::pop_back(&mut pool.token_ids_list);
+            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
+            token::deposit_token(account, token);
+            i = i + 1;
+        };
+
+        let withdrawnable_coin = coin::extract<CoinType>(&mut pool.coin_amount, withdrawnable_coin_amount);
+        let sender = signer::address_of(account);
+        if (!coin::is_account_registered<CoinType>(sender)) {
+            coin::register<CoinType>(account);
+        };
+        coin::deposit(sender, withdrawnable_coin);
+    }
+
+    public entry fun remove_liquidity_script<CoinType> (
+                                    account: &signer,
+                                    collection: String,
+                                    lp_amount: u64) acquires Pool {
+        remove_liquidity<CoinType>(account, collection, lp_amount)
     }
 
     struct MarketId has store, drop, copy {
