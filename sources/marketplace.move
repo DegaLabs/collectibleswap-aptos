@@ -24,9 +24,9 @@ module collectibleswap::marketplace {
     const FEE_DIVISOR: u64 = 10000;
     const PROTOCOL_FEE_MULTIPLIER: u64 = 100;   //1%
 
-    const COIN_POOL_TYPE: u8 = 0;
-    const TOKEN_POOL_TYPE: u8 = 1;
-    const TRADING_POOL_TYPE: u8 = 2;
+    const POOL_TYPE_COIN: u8 = 0;
+    const POOL_TYPE_TOKEN: u8 = 1;
+    const POOL_TYPE_TRADING: u8 = 2;
     const CURVE_LINEAR_TYPE: u8 = 0;
     const CURVE_EXPONENTIAL_TYPE: u8 = 1;
 
@@ -41,9 +41,17 @@ module collectibleswap::marketplace {
     const LIQUIDITY_VALUE_TOO_LOW: u64 = 1007;
     const INVALID_POOL_TYPE: u64 = 1008;
     const INVALID_CURVE_TYPE: u64 = 1009;
+    const NUM_NFTS_MUST_GREATER_THAN_ZERO: u64 = 1010;
+    const WRONG_POOL_TYPE: u64 = 1011;
+    const NOT_ENOUGH_NFT_IN_POOL: u64 = 1012;
+    const FAILED_TO_GET_BUY_INFO: u64 = 1013;
+    const INPUT_COIN_EXCEED_COIN_AMOUNT: u64 = 1014;
+    const FAILED_TO_GET_SELL_INFO: u64 = 1015;
+    const INSUFFICIENT_OUTPUT_AMOUNT: u64 = 1016;
 
     struct Pool<phantom CoinType> has key {
         coin_amount: Coin<CoinType>,
+        protocol_credit_coin: Coin<CoinType>,
         collection: String,
         tokens: TableWithLength<token::TokenId, token::Token>,
         token_ids_list: vector<token::TokenId>,
@@ -73,7 +81,7 @@ module collectibleswap::marketplace {
                     fee: u64,
                     property_version: u64) acquires Pool {
         // make sure pair does not exist already
-        assert!(pool_type == TRADING_POOL_TYPE || pool_type == TOKEN_POOL_TYPE || pool_type == COIN_POOL_TYPE, INVALID_POOL_TYPE);
+        assert!(pool_type == POOL_TYPE_TRADING || pool_type == POOL_TYPE_TOKEN || pool_type == POOL_TYPE_COIN, INVALID_POOL_TYPE);
         assert!(curve_type == CURVE_LINEAR_TYPE || curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
         assert!(!exists<Pool<CoinType>>(@collectibleswap), PAIR_ALREADY_EXISTS); 
         assert!(vector::length(token_names) == vector::length(token_creators), INVALID_INPUT_TOKENS);
@@ -101,6 +109,7 @@ module collectibleswap::marketplace {
         // // create and store new pair
         move_to(root, Pool<CoinType> {
             coin_amount: c,
+            protocol_credit_coin: coin::zero<CoinType>(),
             collection,
             tokens: table_with_length::new(),
             token_ids_list: vector::empty(),
@@ -255,18 +264,208 @@ module collectibleswap::marketplace {
         remove_liquidity<CoinType>(account, collection, lp_amount)
     }
 
-    public entry fun swap_coin_to_tokens<CoinType> (
+    public entry fun swap_coin_to_any_tokens_script<CoinType> (
                                     account: &signer,
                                     collection: String,
-                                    max_coin_amount: u64) {
+                                    num_nfts: u64,
+                                    max_coin_amount: u64) acquires Pool {
+        swap_coin_to_any_tokens<CoinType>(account, collection, num_nfts, max_coin_amount)
     }
 
-    public entry fun swap_tokens_to_coin<CoinType> (
+    public fun swap_coin_to_any_tokens<CoinType> (
+                                    account: &signer,
+                                    collection: String,
+                                    num_nfts: u64,
+                                    max_coin_amount: u64) acquires Pool {
+        assert!(exists<Pool<CoinType>>(@collectibleswap), PAIR_NOT_EXISTS); 
+        assert!(num_nfts > 0, NUM_NFTS_MUST_GREATER_THAN_ZERO);
+
+        let pool = borrow_global_mut<Pool<CoinType>>(@collectibleswap);
+
+        assert!(pool.collection == collection, INVALID_POOL_COLLECTION);
+        assert!(pool.pool_type == POOL_TYPE_TOKEN || pool.pool_type == POOL_TYPE_TRADING, WRONG_POOL_TYPE);
+
+        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        assert!(num_nfts <= current_token_count_in_pool, NOT_ENOUGH_NFT_IN_POOL);
+
+        let (protocol_fee, input_value) = calculate_buy_info<CoinType>(pool, num_nfts, max_coin_amount, PROTOCOL_FEE_MULTIPLIER);
+
+        // send tokens to buyer
+        let i = 0; 
+        while (i < num_nfts) {
+            let token_id = vector::pop_back(&mut pool.token_ids_list);
+            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
+            token::deposit_token(account, token);
+            i = i + 1;
+        };
+
+        // get coin from buyer
+        let input_coin = coin::withdraw<CoinType>(account, input_value);
+        let protocol_fee_coin = coin::extract<CoinType>(&mut input_coin, protocol_fee);
+        coin::merge<CoinType>(&mut pool.protocol_credit_coin, protocol_fee_coin);
+
+        // adjust pool coin amount
+        if (pool.pool_type == POOL_TYPE_TRADING) {
+            //trade pool, add the coin input to the pool balance
+            coin::merge<CoinType>(&mut pool.coin_amount, input_coin);
+        } else {
+            // send coin to asset_recipient
+            let sender = signer::address_of(account);
+            coin::deposit(sender, input_coin);
+        };
+    }
+
+    public entry fun swap_coin_to_specific_tokens<CoinType> (
                                     account: &signer,
                                     collection: String,
                                     token_names: vector<String>,
                                     token_creators: vector<address>,
-                                    property_version: u64) {
+                                    property_version: u64,
+                                    max_coin_amount: u64) acquires Pool {
+        swap_coin_to_specific<CoinType>(account, collection, &token_names, &token_creators, property_version, max_coin_amount)
     }
 
+    public fun swap_coin_to_specific<CoinType> (
+                                    account: &signer,
+                                    collection: String,
+                                    token_names: &vector<String>,
+                                    token_creators: &vector<address>,
+                                    property_version: u64,
+                                    max_coin_amount: u64) acquires Pool {
+        assert!(exists<Pool<CoinType>>(@collectibleswap), PAIR_NOT_EXISTS); 
+        assert!(vector::length(token_names) == vector::length(token_creators), INVALID_INPUT_TOKENS);
+        let num_nfts = vector::length(token_names);
+        assert!(num_nfts > 0, NUM_NFTS_MUST_GREATER_THAN_ZERO);
+
+        let pool = borrow_global_mut<Pool<CoinType>>(@collectibleswap);
+
+        assert!(pool.collection == collection, INVALID_POOL_COLLECTION);
+        assert!(pool.pool_type == POOL_TYPE_TOKEN || pool.pool_type == POOL_TYPE_TRADING, WRONG_POOL_TYPE);
+
+        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        assert!(num_nfts <= current_token_count_in_pool, NOT_ENOUGH_NFT_IN_POOL);
+
+        let (protocol_fee, input_value) = calculate_buy_info<CoinType>(pool, num_nfts, max_coin_amount, PROTOCOL_FEE_MULTIPLIER);
+
+        // send tokens to buyer
+        let i = 0; 
+        while (i < num_nfts) {
+            let token_id = token::create_token_id_raw(*vector::borrow<address>(token_creators, i), collection, *vector::borrow<String>(token_names, i), property_version);
+            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
+            // removing token_id from token_ids_list
+            let j = 0;
+            let token_ids_count_in_list = vector::length(&pool.token_ids_list);
+            while (j < token_ids_count_in_list) {
+                let item = vector::borrow(&mut pool.token_ids_list, j);
+                if (*item == token_id) {
+                    if (j == token_ids_count_in_list - 1) {
+                        vector::pop_back(&mut pool.token_ids_list);
+                    } else {
+                        let last = vector::pop_back(&mut pool.token_ids_list);
+                        let element_at_deleted_position = vector::borrow_mut(&mut pool.token_ids_list, j);
+                        *element_at_deleted_position = last;
+                    };
+                    break;
+                };
+                j = j + 1;
+            };
+            token::deposit_token(account, token);
+            i = i + 1;
+        };
+
+        // get coin from buyer
+        let input_coin = coin::withdraw<CoinType>(account, input_value);
+        let protocol_fee_coin = coin::extract<CoinType>(&mut input_coin, protocol_fee);
+        coin::merge<CoinType>(&mut pool.protocol_credit_coin, protocol_fee_coin);
+
+        // adjust pool coin amount
+        if (pool.pool_type == POOL_TYPE_TRADING) {
+            //trade pool, add the coin input to the pool balance
+            coin::merge<CoinType>(&mut pool.coin_amount, input_coin);
+        } else {
+            // send coin to asset_recipient
+            let sender = signer::address_of(account);
+            coin::deposit(sender, input_coin);
+        };
+    }
+
+    public entry fun swap_tokens_to_coin_script<CoinType> (
+                                    account: &signer,
+                                    collection: String,
+                                    token_names: vector<String>,
+                                    token_creators: vector<address>,
+                                    min_coin_output: u64,
+                                    property_version: u64) {
+        swap_tokens_to_coin<CoinType>(account, collection, &token_names, &token_creators, min_coin_output, property_version);
+    }
+
+    public fun swap_tokens_to_coin<CoinType> (
+                                    account: &signer,
+                                    collection: String,
+                                    token_names: &vector<String>,
+                                    token_creators: &vector<address>,
+                                    min_coin_output: u64,
+                                    property_version: u64) {
+        
+    }
+
+
+    fun calculate_buy_info<CoinType>(
+                pool: &mut Pool<CoinType>, 
+                num_nfts: u64, 
+                max_coin_amount: u64, 
+                protocol_fee_multiplier: u64): (u64, u64) {
+        let current_spot_price = pool.spot_price;
+        let current_delta = pool.delta;
+        let (error_code, new_spot_price, new_delta, input_value, protocol_fee) = get_buy_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, PROTOCOL_FEE_MULTIPLIER);
+        assert!(error_code == 0, FAILED_TO_GET_BUY_INFO);
+        assert!(input_value <= max_coin_amount, INPUT_COIN_EXCEED_COIN_AMOUNT);
+        pool.spot_price = new_spot_price;
+        pool.delta = new_delta;
+        (protocol_fee, input_value)
+    }
+
+    fun calculate_sell_info<CoinType>(
+                pool: &mut Pool<CoinType>, 
+                num_nfts: u64, 
+                min_expected_coin_output: u64, 
+                protocol_fee_multiplier: u64): (u64, u64) {
+        let current_spot_price = pool.spot_price;
+        let current_delta = pool.delta;
+        let (error_code, new_spot_price, new_delta, output_value, protocol_fee) = get_sell_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, PROTOCOL_FEE_MULTIPLIER);
+        assert!(error_code == 0, FAILED_TO_GET_SELL_INFO);
+        assert!(output_value >= min_expected_coin_output, INSUFFICIENT_OUTPUT_AMOUNT);
+        pool.spot_price = new_spot_price;
+        pool.delta = new_delta;
+        (protocol_fee, output_value)
+    }
+
+    fun get_buy_info(curve_type: u8, 
+                    spot_price: u64,
+                    delta: u64,
+                    num_items: u64,
+                    fee_multiplier: u64,
+                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64) {
+        assert!(curve_type == CURVE_LINEAR_TYPE || curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
+        if (curve_type == CURVE_LINEAR_TYPE) {
+            linear::get_buy_info(spot_price, delta, num_items, fee_multiplier, protocol_fee_multiplier)
+        } else {
+            exponential::get_buy_info(spot_price, delta, num_items, fee_multiplier, protocol_fee_multiplier)
+        } 
+    }
+
+    fun get_sell_info(
+                    curve_type: u8,
+                    spot_price: u64,
+                    delta: u64,
+                    num_items: u64,
+                    fee_multiplier: u64,
+                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64) {
+        assert!(curve_type == CURVE_LINEAR_TYPE || curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
+        if (curve_type == CURVE_LINEAR_TYPE) {
+            linear::get_sell_info(spot_price, delta, num_items, fee_multiplier, protocol_fee_multiplier)
+        } else {
+            exponential::get_sell_info(spot_price, delta, num_items, fee_multiplier, protocol_fee_multiplier)
+        } 
+    }
 }
