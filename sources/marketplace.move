@@ -54,6 +54,7 @@ module collectibleswap::marketplace {
         coin_amount: Coin<CoinType>,
         protocol_credit_coin: Coin<CoinType>,
         collection: String,
+        token_creator: address,
         collection_type: type_info::TypeInfo,
         tokens: TableWithLength<token::TokenId, token::Token>,
         token_ids_list: vector<token::TokenId>,
@@ -137,12 +138,12 @@ module collectibleswap::marketplace {
             coin_amount: c,
             protocol_credit_coin: coin::zero<CoinType>(),
             collection,
+            token_creator,
             collection_type: type_info::type_of<CollectionCoinType>(),
             tokens: table_with_length::new(),
             token_ids_list: vector::empty(),
             tokens_for_asset_recipient: table_with_length::new(),
-            token_ids_list_asset_recipient: vector::empty
-            (),
+            token_ids_list_asset_recipient: vector::empty(),
             mint_capability,
             freeze_capability,
             burn_capability,
@@ -189,19 +190,16 @@ module collectibleswap::marketplace {
 
     public fun add_liquidity<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String, 
                                     token_names: &vector<String>,
-                                    token_creator: address,
                                     property_version: u64) acquires Pool, PoolAccountCap {
         assert_no_emergency();
-        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
-        assert!(vector::length(token_names) > 0, EMPTY_NFTS_INPUT);
-
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
-
-        assert!(pool.collection == collection, INVALID_POOL_COLLECTION);
+        let collection = pool.collection;
+        let token_creator = pool.token_creator;
+        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
+        assert!(vector::length(token_names) > 0, EMPTY_NFTS_INPUT);
 
         // compute coin amount
         let added_token_count = vector::length(token_names);
@@ -227,28 +225,23 @@ module collectibleswap::marketplace {
 
     public entry fun add_liquidity_script<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String, 
                                     token_names: vector<String>,
-                                    token_creator: address,
                                     property_version: u64) acquires Pool, PoolAccountCap {
-        add_liquidity<CoinType, CollectionCoinType>(account, collection, &token_names, token_creator, property_version)
+        add_liquidity<CoinType, CollectionCoinType>(account, &token_names, property_version)
     }
 
     public fun remove_liquidity<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String, 
-                                    token_creator: address,
                                     lp_amount: u64) acquires Pool, PoolAccountCap {
         assert_no_emergency();
-        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
-
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
         assert!(lp_amount > 0, LP_MUST_GREATER_THAN_ZERO);
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
-
-        assert!(pool.collection == collection, INVALID_POOL_COLLECTION);
+        let collection = pool.collection;
+        let token_creator = pool.token_creator;
+        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
 
         let lp_coin = coin::withdraw<LiquidityCoin<CoinType, CollectionCoinType>>(account, lp_amount);
         let lp_supply_option = coin::supply<LiquidityCoin<CoinType, CollectionCoinType>>();
@@ -297,36 +290,31 @@ module collectibleswap::marketplace {
 
     public entry fun remove_liquidity_script<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String,
-                                    token_creator: address,
                                     lp_amount: u64) acquires Pool, PoolAccountCap {
-        remove_liquidity<CoinType, CollectionCoinType>(account, collection, token_creator, lp_amount)
+        remove_liquidity<CoinType, CollectionCoinType>(account, lp_amount)
     }
 
     public entry fun swap_coin_to_any_tokens_script<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String,
-                                    token_creator: address,
                                     num_nfts: u64,
                                     max_coin_amount: u64) acquires Pool, PoolAccountCap {
-        swap_coin_to_any_tokens<CoinType, CollectionCoinType>(account, collection, token_creator, num_nfts, max_coin_amount)
+        swap_coin_to_any_tokens<CoinType, CollectionCoinType>(account, num_nfts, max_coin_amount)
     }
 
     public fun swap_coin_to_any_tokens<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String,
-                                    token_creator: address,
                                     num_nfts: u64,
                                     max_coin_amount: u64) acquires Pool, PoolAccountCap {
         assert_no_emergency();
-        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
         assert!(num_nfts > 0, NUM_NFTS_MUST_GREATER_THAN_ZERO);
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let collection = pool.collection;
+        let token_creator = pool.token_creator;
+        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
 
-        assert!(pool.collection == collection, INVALID_POOL_COLLECTION);
         assert!(pool.pool_type == POOL_TYPE_TOKEN || pool.pool_type == POOL_TYPE_TRADING, WRONG_POOL_TYPE);
 
         let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
@@ -361,32 +349,29 @@ module collectibleswap::marketplace {
 
     public entry fun swap_coin_to_specific_tokens<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String,
                                     token_names: vector<String>,
-                                    token_creator: address,
                                     property_version: u64,
                                     max_coin_amount: u64) acquires Pool, PoolAccountCap
                                      {
-        swap_coin_to_specific<CoinType, CollectionCoinType>(account, collection, &token_names, token_creator, property_version, max_coin_amount)
+        swap_coin_to_specific<CoinType, CollectionCoinType>(account, &token_names, property_version, max_coin_amount)
     }
 
     public fun swap_coin_to_specific<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String,
                                     token_names: &vector<String>,
-                                    token_creator: address,
                                     property_version: u64,
                                     max_coin_amount: u64) acquires Pool, PoolAccountCap {
         assert_no_emergency();
-        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
         let num_nfts = vector::length(token_names);
         assert!(num_nfts > 0, NUM_NFTS_MUST_GREATER_THAN_ZERO);
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let collection = pool.collection;
+        let token_creator = pool.token_creator;
+        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
 
-        assert!(pool.collection == collection, INVALID_POOL_COLLECTION);
         assert!(pool.pool_type == POOL_TYPE_TOKEN || pool.pool_type == POOL_TYPE_TRADING, WRONG_POOL_TYPE);
 
         let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
@@ -423,31 +408,28 @@ module collectibleswap::marketplace {
 
     public entry fun swap_tokens_to_coin_script<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String,
                                     token_names: vector<String>,
-                                    token_creator: address,
                                     min_coin_output: u64,
                                     property_version: u64) acquires Pool, PoolAccountCap {
-        swap_tokens_to_coin<CoinType, CollectionCoinType>(account, collection, &token_names, token_creator, min_coin_output, property_version);
+        swap_tokens_to_coin<CoinType, CollectionCoinType>(account, &token_names, min_coin_output, property_version);
     }
 
     public fun swap_tokens_to_coin<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    collection: String,
                                     token_names: &vector<String>,
-                                    token_creator: address,
                                     min_coin_output: u64,
                                     property_version: u64) acquires Pool, PoolAccountCap {
         assert_no_emergency();
-        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
         let num_nfts = vector::length(token_names);
         assert!(num_nfts > 0, NUM_NFTS_MUST_GREATER_THAN_ZERO);
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let collection = pool.collection;
+        let token_creator = pool.token_creator;
+        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
 
-        assert!(pool.collection == collection, INVALID_POOL_COLLECTION);
         assert!(pool.pool_type == POOL_TYPE_COIN || pool.pool_type == POOL_TYPE_TRADING, WRONG_POOL_TYPE);
 
         let (protocol_fee, output_amount) = update_sell_info<CoinType, CollectionCoinType>(
