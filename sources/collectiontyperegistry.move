@@ -29,7 +29,7 @@ module collectibleswap::collectiontyperegistry {
         move_to(collectibleswap_admin, CollectionTypeRegistry { collection_to_cointype: table::new(), cointype_to_collection: table::new() });
     }
 
-    public entry fun register<CoinType>(account: &signer, collection: String, creator: address) acquires CollectionTypeRegistry {
+    public fun register<CoinType>(collection: String, creator: address) acquires CollectionTypeRegistry {
         assert!(!exists<CollectionTypeRegistry>(@collectibleswap), REGISTRY_NOT_INITIALIZED);
         let registry = borrow_global_mut<CollectionTypeRegistry>(@collectibleswap);
         let collection_type = CollectionCoinType { collection: collection, creator: creator };
