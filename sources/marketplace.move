@@ -385,7 +385,7 @@ module collectibleswap::marketplace {
             let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
             let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
             // removing token_id from token_ids_list
-            remove_token_id_from_pool_list<CoinType, CollectionCoinType>(pool, token_id);
+            remove_token_id_from_pool_list(&mut pool.token_ids_list, token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
@@ -463,12 +463,31 @@ module collectibleswap::marketplace {
             while (i < num_nfts) {
                 let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
                 let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
-                remove_token_id_from_pool_list<CoinType, CollectionCoinType>(pool, token_id);
+                remove_token_id_from_pool_list(&mut pool.token_ids_list, token_id);
                 //deposit token for asset recipients to claim
                 table_with_length::add<token::TokenId, token::Token>(&mut pool.tokens_for_asset_recipient, token_id, token);
                 vector::push_back<token::TokenId>(&mut pool.token_ids_list_asset_recipient, token_id);
                 i = i + 1;
             };
+        };
+    }
+
+    public entry fun claim_tokens_script<CoinType, CollectionCoinType>(account: &signer) acquires Pool, PoolAccountCap{
+        let i = 0; 
+        assert_no_emergency();
+        let (pool_account_address, _) = get_pool_account_signer();
+        assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
+
+        let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let collection = pool.collection;
+        let token_creator = pool.token_creator;
+        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
+        let num_nfts = vector::length(&pool.token_ids_list_asset_recipient);
+        while (i < num_nfts) {
+            let token_id = vector::pop_back(&mut pool.token_ids_list_asset_recipient);
+            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
+            token::deposit_token(account, token);
+            i = i + 1;
         };
     }
 
@@ -522,21 +541,20 @@ module collectibleswap::marketplace {
         (new_spot_price, new_delta, protocol_fee, output_value)
     }
 
-    fun remove_token_id_from_pool_list<CoinType, CollectionCoinType>(pool: &mut Pool<CoinType, CollectionCoinType>, token_id: token::TokenId) {
+    fun remove_token_id_from_pool_list(token_ids_list: &mut vector<token::TokenId>, token_id: token::TokenId) {
         let j = 0;
-        let token_ids_count_in_list = vector::length(&pool.token_ids_list);
+        let token_ids_count_in_list = vector::length(token_ids_list);
         while (j < token_ids_count_in_list) {
-            let item = vector::borrow(&mut pool.token_ids_list, j);
+            let item = vector::borrow(token_ids_list, j);
             if (*item == token_id) {
                 if (j == token_ids_count_in_list - 1) {
-                    vector::pop_back(&mut pool.token_ids_list);
+                    vector::pop_back(token_ids_list);
                 } else {
-                    let last = vector::pop_back(&mut pool.token_ids_list);
-                    let element_at_deleted_position = vector::borrow_mut(&mut pool.token_ids_list, j);
+                    let last = vector::pop_back(token_ids_list);
+                    let element_at_deleted_position = vector::borrow_mut(token_ids_list, j);
                     *element_at_deleted_position = last;
                 };
                 break
-
             };
             j = j + 1;
         };
