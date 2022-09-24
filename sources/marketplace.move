@@ -164,7 +164,7 @@ module collectibleswap::marketplace {
     }
 
     public fun create_new_pool<CoinType, CollectionCoinType>(
-                    root: &signer, 
+                    account: &signer, 
                     collection: String, 
                     token_names: &vector<String>,
                     token_creator: address,
@@ -184,9 +184,8 @@ module collectibleswap::marketplace {
         assert!(!exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_ALREADY_EXISTS); 
         assert!(vector::length(token_names) > 0, EMPTY_NFTS_INPUT);
         // initialize new coin type to represent this pair's liquidity
-        // coin::initialize checks that signer::address_of(root) == @aubrium so we don't have to check it here
         let (burn_capability, freeze_capability, mint_capability) = coin::initialize<LiquidityCoin<CoinType, CollectionCoinType>>(
-            root,
+            &pool_account_signer,
             string::utf8(b"CollectibleSwap NFT AMM LP"),
             string::utf8(b"CSP-NFT-LP"),
             9,
@@ -195,12 +194,14 @@ module collectibleswap::marketplace {
 
         // compute coin amount
         let initial_coin_amount = vector::length(token_names) * initial_spot_price;
-        let c = coin::withdraw<CoinType>(root, initial_coin_amount);
+        let c = coin::withdraw<CoinType>(account, initial_coin_amount);
 
         let liquidity = math::sqrt(initial_coin_amount);
         let liquidity_coin = coin::mint<LiquidityCoin<CoinType, CollectionCoinType>>(liquidity, &mint_capability);
-        coin::register<LiquidityCoin<CoinType, CollectionCoinType>>(root);
-        let sender = signer::address_of(root);
+        let sender = signer::address_of(account);
+        if (coin::is_account_registered<LiquidityCoin<CoinType, CollectionCoinType>>(sender)) {
+            coin::register<LiquidityCoin<CoinType, CollectionCoinType>>(account);
+        };
         coin::deposit(sender, liquidity_coin);
 
         // // create and store new pair
@@ -225,7 +226,7 @@ module collectibleswap::marketplace {
             fee
         });
 
-        let token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(root, collection, token_names, token_creator, property_version);
+        let token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, collection, token_names, token_creator, property_version);
 
         let events_store = EventsStore<CoinType, CollectionCoinType> {
             pool_created_handle: account::new_event_handle<PoolCreatedEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
@@ -285,7 +286,7 @@ module collectibleswap::marketplace {
 
 
     public entry fun create_new_pool_script<CoinType, CollectionCoinType>(
-                                    root: &signer,
+                                    account: &signer,
                                     collection: String, 
                                     token_names: vector<String>,
                                     token_creator: address,
@@ -296,7 +297,7 @@ module collectibleswap::marketplace {
                                     delta: u64,
                                     fee: u64,
                                     property_version: u64) acquires Pool, PoolAccountCap {
-        create_new_pool<CoinType, CollectionCoinType>(root, collection, &token_names, token_creator, initial_spot_price, curve_type, pool_type, asset_recipient, delta, fee, property_version)
+        create_new_pool<CoinType, CollectionCoinType>(account, collection, &token_names, token_creator, initial_spot_price, curve_type, pool_type, asset_recipient, delta, fee, property_version)
     }
 
     public fun add_liquidity<CoinType, CollectionCoinType> (
