@@ -15,6 +15,7 @@ module collectibleswap::marketplace {
     use movemate::u256;
     use collectibleswap::linear;
     use collectibleswap::exponential;
+    use collectibleswap::emergency::assert_no_emergency;
 
     const ESELLER_CAN_NOT_BE_BUYER: u64 = 1;
     const FEE_DENOMINATOR: u64 = 10000;
@@ -78,7 +79,7 @@ module collectibleswap::marketplace {
     public entry fun initialize_script(collectibleswap_admin: &signer) {
         assert!(signer::address_of(collectibleswap_admin) == @collectibleswap, ERR_NOT_ENOUGH_PERMISSIONS_TO_INITIALIZE);
         assert!(!exists<PoolAccountCap>(@collectibleswap), MARKET_ALREADY_INITIALIZED);
-        let (pool_acc, signer_cap) =
+        let (_, signer_cap) =
             account::create_resource_account(collectibleswap_admin, b"collectibleswap_pool_resource_account");
         move_to(collectibleswap_admin, PoolAccountCap { signer_cap });
     }
@@ -102,6 +103,7 @@ module collectibleswap::marketplace {
                     fee: u64,
                     property_version: u64) acquires Pool, PoolAccountCap {
         // make sure pair does not exist already
+        assert_no_emergency();
         let (pool_account_address, pool_account_signer) = get_pool_account_signer();
         assert!(pool_type == POOL_TYPE_TRADING || pool_type == POOL_TYPE_TOKEN || pool_type == POOL_TYPE_COIN, INVALID_POOL_TYPE);
         assert!(curve_type == CURVE_LINEAR_TYPE || curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
@@ -186,6 +188,7 @@ module collectibleswap::marketplace {
                                     token_names: &vector<String>,
                                     token_creators: &vector<address>,
                                     property_version: u64) acquires Pool, PoolAccountCap {
+        assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
         assert!(vector::length(token_names) == vector::length(token_creators), INVALID_INPUT_TOKENS);
@@ -230,6 +233,7 @@ module collectibleswap::marketplace {
                                     account: &signer,
                                     collection: String, 
                                     lp_amount: u64) acquires Pool, PoolAccountCap {
+        assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
         assert!(lp_amount > 0, LP_MUST_GREATER_THAN_ZERO);
@@ -303,6 +307,7 @@ module collectibleswap::marketplace {
                                     collection: String,
                                     num_nfts: u64,
                                     max_coin_amount: u64) acquires Pool, PoolAccountCap {
+        assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
         assert!(num_nfts > 0, NUM_NFTS_MUST_GREATER_THAN_ZERO);
@@ -315,7 +320,7 @@ module collectibleswap::marketplace {
         let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
         assert!(num_nfts <= current_token_count_in_pool, NOT_ENOUGH_NFT_IN_POOL);
 
-        let (protocol_fee, input_value) = calculate_buy_info<CoinType, CollectionCoinType>(pool, num_nfts, max_coin_amount, PROTOCOL_FEE_MULTIPLIER);
+        let (protocol_fee, input_value) = update_buy_info<CoinType, CollectionCoinType>(pool, num_nfts, max_coin_amount, PROTOCOL_FEE_MULTIPLIER);
 
         // send tokens to buyer
         let i = 0; 
@@ -360,6 +365,7 @@ module collectibleswap::marketplace {
                                     token_creators: &vector<address>,
                                     property_version: u64,
                                     max_coin_amount: u64) acquires Pool, PoolAccountCap {
+        assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
         assert!(vector::length(token_names) == vector::length(token_creators), INVALID_INPUT_TOKENS);
@@ -374,7 +380,7 @@ module collectibleswap::marketplace {
         let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
         assert!(num_nfts <= current_token_count_in_pool, NOT_ENOUGH_NFT_IN_POOL);
 
-        let (protocol_fee, input_value) = calculate_buy_info<CoinType, CollectionCoinType>(pool, num_nfts, max_coin_amount, PROTOCOL_FEE_MULTIPLIER);
+        let (protocol_fee, input_value) = update_buy_info<CoinType, CollectionCoinType>(pool, num_nfts, max_coin_amount, PROTOCOL_FEE_MULTIPLIER);
 
         // send tokens to buyer
         let i = 0; 
@@ -436,18 +442,17 @@ module collectibleswap::marketplace {
                                     token_creators: &vector<address>,
                                     min_coin_output: u64,
                                     property_version: u64) {
-        
+        assert_no_emergency();
+        // TODO
     }
 
 
-    fun calculate_buy_info<CoinType, CollectionCoinType>(
+    fun update_buy_info<CoinType, CollectionCoinType>(
                 pool: &mut Pool<CoinType, CollectionCoinType>, 
                 num_nfts: u64, 
                 max_coin_amount: u64, 
                 protocol_fee_multiplier: u64): (u64, u64) {
-        let current_spot_price = pool.spot_price;
-        let current_delta = pool.delta;
-        let (error_code, new_spot_price, new_delta, input_value, protocol_fee) = get_buy_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, PROTOCOL_FEE_MULTIPLIER);
+        let (error_code, new_spot_price, new_delta, input_value, protocol_fee) = get_buy_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, protocol_fee_multiplier);
         assert!(error_code == 0, FAILED_TO_GET_BUY_INFO);
         assert!(input_value <= max_coin_amount, INPUT_COIN_EXCEED_COIN_AMOUNT);
         pool.spot_price = new_spot_price;
@@ -455,19 +460,40 @@ module collectibleswap::marketplace {
         (protocol_fee, input_value)
     }
 
-    fun calculate_sell_info<CoinType, CollectionCoinType>(
+    public fun calculate_buy_info<CoinType, CollectionCoinType>(
+                num_nfts: u64, 
+                max_coin_amount: u64): (u64, u64, u64, u64) acquires Pool, PoolAccountCap {
+        let (pool_account_address, _) = get_pool_account_signer();
+        let pool = borrow_global<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let (error_code, new_spot_price, new_delta, input_value, protocol_fee) = get_buy_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, PROTOCOL_FEE_MULTIPLIER);
+        assert!(error_code == 0, FAILED_TO_GET_BUY_INFO);
+        assert!(input_value <= max_coin_amount, INPUT_COIN_EXCEED_COIN_AMOUNT);
+        (new_spot_price, new_delta, protocol_fee, input_value)
+    }
+
+    fun update_sell_info<CoinType, CollectionCoinType>(
                 pool: &mut Pool<CoinType, CollectionCoinType>, 
                 num_nfts: u64, 
                 min_expected_coin_output: u64, 
                 protocol_fee_multiplier: u64): (u64, u64) {
-        let current_spot_price = pool.spot_price;
-        let current_delta = pool.delta;
-        let (error_code, new_spot_price, new_delta, output_value, protocol_fee) = get_sell_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, PROTOCOL_FEE_MULTIPLIER);
+        let (error_code, new_spot_price, new_delta, output_value, protocol_fee) = get_sell_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, protocol_fee_multiplier);
         assert!(error_code == 0, FAILED_TO_GET_SELL_INFO);
         assert!(output_value >= min_expected_coin_output, INSUFFICIENT_OUTPUT_AMOUNT);
         pool.spot_price = new_spot_price;
         pool.delta = new_delta;
         (protocol_fee, output_value)
+    }
+
+    public fun calculate_sell_info<CoinType, CollectionCoinType>(
+                num_nfts: u64, 
+                min_expected_coin_output: u64): (u64, u64, u64, u64) acquires Pool, PoolAccountCap
+                 {
+        let (pool_account_address, _) = get_pool_account_signer();
+        let pool = borrow_global<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let (error_code, new_spot_price, new_delta, output_value, protocol_fee) = get_sell_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, PROTOCOL_FEE_MULTIPLIER);
+        assert!(error_code == 0, FAILED_TO_GET_SELL_INFO);
+        assert!(output_value >= min_expected_coin_output, INSUFFICIENT_OUTPUT_AMOUNT);
+        (new_spot_price, new_delta, protocol_fee, output_value)
     }
 
     fun get_buy_info(curve_type: u8, 
