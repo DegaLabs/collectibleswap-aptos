@@ -5,6 +5,7 @@ license = "MIT"
 
 [addresses]
 collectibleswap ="0x347c4ef2c85ca56fb70dc914c24de14a9caded800add3fcf2d450bcb618016ff"
+emergency_admin ="0x347c4ef2c85ca56fb70dc914c24de14a9caded800add3fcf2d450bcb618016ff"
 std="0x1"
 aptos_framework="0x1"
 aptos_std="0x1"
