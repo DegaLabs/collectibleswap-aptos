@@ -5,16 +5,16 @@ module collectibleswap::emergency {
     // Error codes.
 
     /// When the wrong account attempted to create an emergency resource.
-    const ERR_NO_PERMISSIONS: u64 = 4000;
+    const ERR_NO_PERMISSIONS: u64 = 2000;
 
     /// When attempted to execute operation during an emergency.
-    const ERR_EMERGENCY: u64 = 4001;
+    const ERR_EMERGENCY: u64 = 2001;
 
     /// When emergency functional disabled.
-    const ERR_DISABLED: u64 = 4002;
+    const ERR_DISABLED: u64 = 2002;
 
     /// When attempted to resume, but we are not in an emergency state.
-    const ERR_NOT_EMERGENCY: u64 = 4003;
+    const ERR_NOT_EMERGENCY: u64 = 2003;
 
     /// The resource stored under account means we are in an emergency.
     struct Emergency has key {}
