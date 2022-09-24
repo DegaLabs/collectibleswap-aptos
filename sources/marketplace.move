@@ -342,7 +342,6 @@ module collectibleswap::marketplace {
             coin::merge<CoinType>(&mut pool.coin_amount, input_coin);
         } else {
             // send coin to asset_recipient
-            let sender = signer::address_of(account);
             coin::deposit(pool.asset_recipient, input_coin);
         };
     }
@@ -401,7 +400,6 @@ module collectibleswap::marketplace {
             coin::merge<CoinType>(&mut pool.coin_amount, input_coin);
         } else {
             // send coin to asset_recipient
-            let sender = signer::address_of(account);
             coin::deposit(pool.asset_recipient, input_coin);
         };
     }
