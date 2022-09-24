@@ -4,8 +4,8 @@ version = "0.1.0"
 license = "MIT"
 
 [addresses]
-collectibleswap ="0x347c4ef2c85ca56fb70dc914c24de14a9caded800add3fcf2d450bcb618016ff"
-emergency_admin ="0x347c4ef2c85ca56fb70dc914c24de14a9caded800add3fcf2d450bcb618016ff"
+collectibleswap ="0x0831c065f08f654d912a39f5cd0ee6bb5288d902c3d8fbfcc61021106fa12e22"
+emergency_admin ="0x0831c065f08f654d912a39f5cd0ee6bb5288d902c3d8fbfcc61021106fa12e22"
 std="0x1"
 aptos_framework="0x1"
 aptos_std="0x1"
