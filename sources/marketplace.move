@@ -2,15 +2,16 @@ module collectibleswap::marketplace {
     use std::signer;
     use std::string:: {Self, String};
     use std::vector;
+    use std::timestamp;
     use std::type_info;
     use aptos_framework::account;
     use aptos_framework::account::SignerCapability;
     use aptos_framework::coin::{Self, Coin, BurnCapability, MintCapability, FreezeCapability};
-    use aptos_std::event::{Self, EventHandle};    
-    use aptos_std::table::{Self, Table};
+    use aptos_std::event;    
+    use aptos_std::table;
     use std::table_with_length::{Self, TableWithLength};
     use aptos_token::token;
-    use std::option::{Self, Option};
+    use std::option;
     use movemate::math;
     use movemate::u256;
     use collectibleswap::linear;
@@ -49,9 +50,11 @@ module collectibleswap::marketplace {
     const INSUFFICIENT_OUTPUT_AMOUNT: u64 = 1016;
     const ERR_NOT_ENOUGH_PERMISSIONS_TO_INITIALIZE: u64 = 1017;
     const MARKET_ALREADY_INITIALIZED: u64 = 1018;
+    const EXCEED_MAX_COIN: u64 = 1019;
+    const INSUFFICIENT_NFTS: u64 = 1020;
 
     struct Pool<phantom CoinType, phantom CollectionCoinType> has key {
-        coin_amount: Coin<CoinType>,
+        reserve: Coin<CoinType>,
         protocol_credit_coin: Coin<CoinType>,
         collection: String,
         token_creator: address,
@@ -69,6 +72,73 @@ module collectibleswap::marketplace {
         asset_recipient: address,
         delta: u64,
         fee: u64
+    }
+
+    // Events
+    struct EventsStore<phantom CoinType, phantom CollectionCoinType> has key {
+        pool_created_handle: event::EventHandle<PoolCreatedEvent<CoinType, CollectionCoinType>>,
+        liquidity_added_handle: event::EventHandle<LiquidityAddedEvent<CoinType, CollectionCoinType>>,
+        liquidity_removed_handle: event::EventHandle<LiquidityRemovedEvent<CoinType, CollectionCoinType>>,
+        swap_tokens_to_coin_handle: event::EventHandle<SwapTokensToCoinEvent<CoinType, CollectionCoinType>>,
+        swap_coin_to_tokens_handle: event::EventHandle<SwapCoinToTokensEvent<CoinType, CollectionCoinType>>,
+        claim_tokens_handle: event::EventHandle<ClaimTokensEvent<CoinType, CollectionCoinType>>
+    }
+
+    struct PoolCreatedEvent<phantom CoinType, phantom CollectionCoinType> has store, drop {
+        collection: String,
+        token_creator: address,
+        curve_type: u8,
+        pool_type: u8,
+        spot_price: u64,
+        asset_recipient: address,
+        delta: u64,
+        fee: u64,
+        pool_creator: address,
+        timestamp: u64
+    }
+
+    struct LiquidityAddedEvent<phantom CoinType, phantom CollectionCoinType> has store, drop {
+        collection: String,
+        token_creator: address,
+        token_ids: vector<token::TokenId>,
+        coin_amount: u64,
+        lp_amount: u64,
+        timestamp: u64
+    }
+
+    struct LiquidityRemovedEvent<phantom CoinType, phantom CollectionCoinType> has store, drop {
+        collection: String,
+        token_creator: address,
+        token_ids: vector<token::TokenId>,
+        coin_amount: u64,
+        lp_amount: u64,
+        timestamp: u64
+    }
+
+    struct SwapCoinToTokensEvent<phantom CoinType, phantom CollectionCoinType> has store, drop {
+        collection: String,
+        token_creator: address,
+        token_ids: vector<token::TokenId>,
+        coin_amount: u64,
+        new_spot_price: u64,
+        timestamp: u64
+    }
+
+    struct SwapTokensToCoinEvent<phantom CoinType, phantom CollectionCoinType> has store, drop {
+        collection: String,
+        token_creator: address,
+        token_ids: vector<token::TokenId>,
+        coin_amount: u64,
+        new_spot_price: u64,
+        timestamp: u64
+    }
+
+    struct ClaimTokensEvent<phantom CoinType, phantom CollectionCoinType> has store, drop {
+        collection: String,
+        token_creator: address,
+        token_ids: vector<token::TokenId>,
+        asset_recipient: address,
+        timestamp: u64
     }
 
     // pool creator should create a unique CollectionCoinType for their collection, this function should be provided on
@@ -135,7 +205,7 @@ module collectibleswap::marketplace {
 
         // // create and store new pair
         move_to(&pool_account_signer, Pool<CoinType, CollectionCoinType> {
-            coin_amount: c,
+            reserve: c,
             protocol_credit_coin: coin::zero<CoinType>(),
             collection,
             token_creator,
@@ -155,23 +225,64 @@ module collectibleswap::marketplace {
             fee
         });
 
-        internal_get_tokens_to_pool<CoinType, CollectionCoinType>(root, collection, token_names, token_creator, property_version)
+        let token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(root, collection, token_names, token_creator, property_version);
+
+        let events_store = EventsStore<CoinType, CollectionCoinType> {
+            pool_created_handle: account::new_event_handle<PoolCreatedEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
+            liquidity_added_handle: account::new_event_handle<LiquidityAddedEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
+            liquidity_removed_handle: account::new_event_handle<LiquidityRemovedEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
+            swap_tokens_to_coin_handle: account::new_event_handle<SwapTokensToCoinEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
+            swap_coin_to_tokens_handle: account::new_event_handle<SwapCoinToTokensEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
+            claim_tokens_handle: account::new_event_handle<ClaimTokensEvent<CoinType, CollectionCoinType>>(&pool_account_signer)
+        };
+        event::emit_event(
+            &mut events_store.pool_created_handle,
+            PoolCreatedEvent<CoinType, CollectionCoinType> {
+                collection: collection,
+                token_creator: token_creator,
+                curve_type: curve_type,
+                pool_type: pool_type,
+                spot_price: initial_spot_price,
+                asset_recipient: asset_recipient,
+                delta: delta,
+                fee: fee,
+                pool_creator: sender,
+                timestamp: timestamp::now_seconds()
+            },
+        );
+
+        event::emit_event(
+            &mut events_store.liquidity_added_handle,
+            LiquidityAddedEvent<CoinType, CollectionCoinType> {
+                collection: collection,
+                token_creator: token_creator,
+                token_ids: token_ids,
+                coin_amount: initial_coin_amount,
+                lp_amount: liquidity,
+                timestamp: timestamp::now_seconds()
+            }
+        );
+        move_to(&pool_account_signer, events_store)
     }
 
-    fun internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account: &signer, collection: String, token_names: &vector<String>, token_creator: address, property_version: u64) acquires Pool, PoolAccountCap {
+    fun internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account: &signer, collection: String, token_names: &vector<String>, token_creator: address, property_version: u64): vector<token::TokenId> acquires Pool, PoolAccountCap {
         // withdrawing tokens
         let i = 0; // define counter
         let count = vector::length(token_names);
         let (pool_account_address, _) = get_pool_account_signer();
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let token_ids = vector::empty<token::TokenId>();
         while (i < count) {
             let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
+            vector::push_back<token::TokenId>(&mut token_ids, token_id);
             let token = token::withdraw_token(account, token_id, 1);
             vector::push_back(&mut pool.token_ids_list, token_id);
             table_with_length::add(&mut pool.tokens, token_id, token);
             i = i + 1;
-        }
+        };
+        return token_ids
     }
+
 
     public entry fun create_new_pool_script<CoinType, CollectionCoinType>(
                                     root: &signer,
@@ -190,8 +301,10 @@ module collectibleswap::marketplace {
 
     public fun add_liquidity<CoinType, CollectionCoinType> (
                                     account: &signer,
+                                    max_coin_amount: u64,
                                     token_names: &vector<String>,
-                                    property_version: u64) acquires Pool, PoolAccountCap {
+                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore
+                                    {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -204,8 +317,9 @@ module collectibleswap::marketplace {
         // compute coin amount
         let added_token_count = vector::length(token_names);
         let coin_amount = added_token_count * pool.spot_price;
+        assert!(coin_amount <= max_coin_amount, EXCEED_MAX_COIN);
         let c = coin::withdraw<CoinType>(account, coin_amount);
-        coin::merge(&mut pool.coin_amount, c);
+        coin::merge(&mut pool.reserve, c);
 
         let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
         let current_liquid_supply = option::extract<u128>(&mut coin::supply<LiquidityCoin<CoinType, CollectionCoinType>>());
@@ -219,20 +333,35 @@ module collectibleswap::marketplace {
         };
         coin::deposit(sender, liquidity_coin);
 
-        internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, collection, token_names, token_creator, property_version)
+        let token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, collection, token_names, token_creator, property_version);
         
+        let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
+        event::emit_event(
+            &mut events_store.liquidity_added_handle,
+            LiquidityAddedEvent<CoinType, CollectionCoinType> {
+                collection: collection,
+                token_creator: token_creator,
+                token_ids: token_ids,
+                coin_amount: coin_amount,
+                lp_amount: liquidity,
+                timestamp: timestamp::now_seconds()
+            }
+        )
     }
 
     public entry fun add_liquidity_script<CoinType, CollectionCoinType> (
                                     account: &signer,
+                                    max_coin_amount: u64,
                                     token_names: vector<String>,
-                                    property_version: u64) acquires Pool, PoolAccountCap {
-        add_liquidity<CoinType, CollectionCoinType>(account, &token_names, property_version)
+                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore {
+        add_liquidity<CoinType, CollectionCoinType>(account, max_coin_amount, &token_names, property_version)
     }
 
     public fun remove_liquidity<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    lp_amount: u64) acquires Pool, PoolAccountCap {
+                                    min_coin_amount: u64, 
+                                    min_nfts: u64,
+                                    lp_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -270,41 +399,61 @@ module collectibleswap::marketplace {
         assert!(withdrawnable_coin_amount >= value_in_fraction_nft, LIQUIDITY_VALUE_TOO_LOW);
         withdrawnable_coin_amount = withdrawnable_coin_amount - value_in_fraction_nft;
 
+        assert!(withdrawnable_coin_amount >= min_coin_amount, INSUFFICIENT_OUTPUT_AMOUNT);
+        assert!(num_nfts_to_withdraw >= min_nfts, INSUFFICIENT_NFTS);
+
         coin::burn(lp_coin, &pool.burn_capability);
         //get token id list
         let i = 0; 
+        let token_ids = vector::empty<token::TokenId>();
         while (i < num_nfts_to_withdraw) {
             let token_id = vector::pop_back(&mut pool.token_ids_list);
+            vector::push_back<token::TokenId>(&mut token_ids, token_id);
             let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
 
-        let withdrawnable_coin = coin::extract<CoinType>(&mut pool.coin_amount, withdrawnable_coin_amount);
+        let withdrawnable_coin = coin::extract<CoinType>(&mut pool.reserve, withdrawnable_coin_amount);
         let sender = signer::address_of(account);
         if (!coin::is_account_registered<CoinType>(sender)) {
             coin::register<CoinType>(account);
         };
         coin::deposit(sender, withdrawnable_coin);
+
+        let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
+        event::emit_event(
+            &mut events_store.liquidity_removed_handle,
+            LiquidityRemovedEvent<CoinType, CollectionCoinType> {
+                collection: collection,
+                token_creator: pool.token_creator,
+                token_ids: token_ids,
+                coin_amount: withdrawnable_coin_amount,
+                lp_amount: lp_amount,
+                timestamp: timestamp::now_seconds()
+            }
+        )
     }
 
     public entry fun remove_liquidity_script<CoinType, CollectionCoinType> (
                                     account: &signer,
-                                    lp_amount: u64) acquires Pool, PoolAccountCap {
-        remove_liquidity<CoinType, CollectionCoinType>(account, lp_amount)
+                                    min_coin_amount: u64, 
+                                    min_nfts: u64,
+                                    lp_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
+        remove_liquidity<CoinType, CollectionCoinType>(account, min_coin_amount, min_nfts, lp_amount)
     }
 
     public entry fun swap_coin_to_any_tokens_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     num_nfts: u64,
-                                    max_coin_amount: u64) acquires Pool, PoolAccountCap {
+                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
         swap_coin_to_any_tokens<CoinType, CollectionCoinType>(account, num_nfts, max_coin_amount)
     }
 
     public fun swap_coin_to_any_tokens<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     num_nfts: u64,
-                                    max_coin_amount: u64) acquires Pool, PoolAccountCap {
+                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -324,8 +473,10 @@ module collectibleswap::marketplace {
 
         // send tokens to buyer
         let i = 0; 
+        let token_ids = vector::empty<token::TokenId>();
         while (i < num_nfts) {
             let token_id = vector::pop_back(&mut pool.token_ids_list);
+            vector::push_back<token::TokenId>(&mut token_ids, token_id);
             let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
             token::deposit_token(account, token);
             i = i + 1;
@@ -339,18 +490,31 @@ module collectibleswap::marketplace {
         // adjust pool coin amount
         if (pool.pool_type == POOL_TYPE_TRADING) {
             //trade pool, add the coin input to the pool balance
-            coin::merge<CoinType>(&mut pool.coin_amount, input_coin);
+            coin::merge<CoinType>(&mut pool.reserve, input_coin);
         } else {
             // send coin to asset_recipient
             coin::deposit(pool.asset_recipient, input_coin);
         };
+
+        let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
+        event::emit_event(
+            &mut events_store.swap_coin_to_tokens_handle,
+            SwapCoinToTokensEvent<CoinType, CollectionCoinType> {
+                collection: collection,
+                token_creator: token_creator,
+                token_ids: token_ids,
+                coin_amount: input_value,
+                new_spot_price: pool.spot_price,
+                timestamp: timestamp::now_seconds()
+            }
+        )
     }
 
     public entry fun swap_coin_to_specific_tokens<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     token_names: vector<String>,
                                     property_version: u64,
-                                    max_coin_amount: u64) acquires Pool, PoolAccountCap
+                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore
                                      {
         swap_coin_to_specific<CoinType, CollectionCoinType>(account, &token_names, property_version, max_coin_amount)
     }
@@ -359,7 +523,7 @@ module collectibleswap::marketplace {
                                     account: &signer,
                                     token_names: &vector<String>,
                                     property_version: u64,
-                                    max_coin_amount: u64) acquires Pool, PoolAccountCap {
+                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -380,8 +544,10 @@ module collectibleswap::marketplace {
 
         // send tokens to buyer
         let i = 0; 
+        let token_ids = vector::empty<token::TokenId>();
         while (i < num_nfts) {
             let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
+            vector::push_back<token::TokenId>(&mut token_ids, token_id);
             let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
             // removing token_id from token_ids_list
             remove_token_id_from_pool_list(&mut pool.token_ids_list, token_id);
@@ -397,18 +563,31 @@ module collectibleswap::marketplace {
         // adjust pool coin amount
         if (pool.pool_type == POOL_TYPE_TRADING) {
             //trade pool, add the coin input to the pool balance
-            coin::merge<CoinType>(&mut pool.coin_amount, input_coin);
+            coin::merge<CoinType>(&mut pool.reserve, input_coin);
         } else {
             // send coin to asset_recipient
             coin::deposit(pool.asset_recipient, input_coin);
         };
+
+        let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
+        event::emit_event(
+            &mut events_store.swap_coin_to_tokens_handle,
+            SwapCoinToTokensEvent<CoinType, CollectionCoinType> {
+                collection: collection,
+                token_creator: token_creator,
+                token_ids: token_ids,
+                coin_amount: input_value,
+                new_spot_price: pool.spot_price,
+                timestamp: timestamp::now_seconds()
+            }
+        )
     }
 
     public entry fun swap_tokens_to_coin_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     token_names: vector<String>,
                                     min_coin_output: u64,
-                                    property_version: u64) acquires Pool, PoolAccountCap {
+                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore {
         swap_tokens_to_coin<CoinType, CollectionCoinType>(account, &token_names, min_coin_output, property_version);
     }
 
@@ -416,7 +595,7 @@ module collectibleswap::marketplace {
                                     account: &signer,
                                     token_names: &vector<String>,
                                     min_coin_output: u64,
-                                    property_version: u64) acquires Pool, PoolAccountCap {
+                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -432,7 +611,7 @@ module collectibleswap::marketplace {
 
         let (protocol_fee, output_amount) = update_sell_info<CoinType, CollectionCoinType>(
             pool, num_nfts, min_coin_output, PROTOCOL_FEE_MULTIPLIER);
-        let remain_pool_coin_amount = coin::value(&pool.coin_amount);
+        let remain_pool_coin_amount = coin::value(&pool.reserve);
         if (remain_pool_coin_amount < output_amount) {
             output_amount = remain_pool_coin_amount;
         };
@@ -443,23 +622,25 @@ module collectibleswap::marketplace {
 
         // transfer output_amount to sender
         let sender = signer::address_of(account);
-        let output_amount_coin = coin::extract<CoinType>(&mut pool.coin_amount, output_amount);
+        let output_amount_coin = coin::extract<CoinType>(&mut pool.reserve, output_amount);
         if (!coin::is_account_registered<CoinType>(sender)) {
             coin::register<CoinType>(account);
         };
         coin::deposit<CoinType>(sender, output_amount_coin);
         if (protocol_fee > 0) {
-            let protocol_fee_coin = coin::extract<CoinType>(&mut pool.coin_amount, protocol_fee);
+            let protocol_fee_coin = coin::extract<CoinType>(&mut pool.reserve, protocol_fee);
             coin::merge(&mut pool.protocol_credit_coin, protocol_fee_coin);
         };
-
+        let token_ids = vector::empty<token::TokenId>();
+        let new_spot_price = pool.spot_price;
         if (pool.pool_type == POOL_TYPE_TRADING) {
             // get nfts
-            internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, collection, token_names, token_creator, property_version);
+            token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, collection, token_names, token_creator, property_version);
         } else {
             let i = 0; 
             while (i < num_nfts) {
                 let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
+                vector::push_back<token::TokenId>(&mut token_ids, token_id);
                 let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
                 remove_token_id_from_pool_list(&mut pool.token_ids_list, token_id);
                 //deposit token for asset recipients to claim
@@ -468,9 +649,22 @@ module collectibleswap::marketplace {
                 i = i + 1;
             };
         };
+
+        let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
+        event::emit_event(
+            &mut events_store.swap_tokens_to_coin_handle,
+            SwapTokensToCoinEvent<CoinType, CollectionCoinType> {
+                collection: collection,
+                token_creator: token_creator,
+                token_ids: token_ids,
+                coin_amount: output_amount,
+                new_spot_price: new_spot_price,
+                timestamp: timestamp::now_seconds()
+            }
+        )
     }
 
-    public entry fun claim_tokens_script<CoinType, CollectionCoinType>(account: &signer) acquires Pool, PoolAccountCap{
+    public entry fun claim_tokens_script<CoinType, CollectionCoinType>(account: &signer) acquires Pool, PoolAccountCap, EventsStore {
         let i = 0; 
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
@@ -481,12 +675,26 @@ module collectibleswap::marketplace {
         let token_creator = pool.token_creator;
         assert_valid_cointype<CollectionCoinType>(collection, token_creator);
         let num_nfts = vector::length(&pool.token_ids_list_asset_recipient);
+        let token_ids = vector::empty<token::TokenId>();
         while (i < num_nfts) {
             let token_id = vector::pop_back(&mut pool.token_ids_list_asset_recipient);
+            vector::push_back<token::TokenId>(&mut token_ids, token_id);
             let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
+
+        let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
+        event::emit_event(
+            &mut events_store.claim_tokens_handle,
+            ClaimTokensEvent<CoinType, CollectionCoinType> {
+                collection: collection,
+                token_creator: token_creator,
+                token_ids: token_ids,
+                asset_recipient: pool.asset_recipient,
+                timestamp: timestamp::now_seconds()
+            }
+        )
     }
 
 
