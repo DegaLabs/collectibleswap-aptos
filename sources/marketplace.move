@@ -19,6 +19,11 @@ module collectibleswap::marketplace {
     use collectibleswap::emergency::assert_no_emergency;
     use collectibleswap::collectiontyperegistry::assert_valid_cointype;
 
+    const MAX_U64: u128 = 18446744073709551615;
+
+    /// Maximum of u128 number.
+    const MAX_U128: u128 = 340282366920938463463374607431768211455;
+
     const ESELLER_CAN_NOT_BE_BUYER: u64 = 1;
     const FEE_DENOMINATOR: u64 = 10000;
     const FEE_DIVISOR: u64 = 10000;
@@ -71,7 +76,9 @@ module collectibleswap::marketplace {
         pool_type: u8,
         asset_recipient: address,
         delta: u64,
-        fee: u64
+        fee: u64,
+        last_price_cumulative: u128,
+        last_block_timestamp: u64
     }
 
     // Events
@@ -81,7 +88,8 @@ module collectibleswap::marketplace {
         liquidity_removed_handle: event::EventHandle<LiquidityRemovedEvent<CoinType, CollectionCoinType>>,
         swap_tokens_to_coin_handle: event::EventHandle<SwapTokensToCoinEvent<CoinType, CollectionCoinType>>,
         swap_coin_to_tokens_handle: event::EventHandle<SwapCoinToTokensEvent<CoinType, CollectionCoinType>>,
-        claim_tokens_handle: event::EventHandle<ClaimTokensEvent<CoinType, CollectionCoinType>>
+        claim_tokens_handle: event::EventHandle<ClaimTokensEvent<CoinType, CollectionCoinType>>,
+        oracle_updated_handle: event::EventHandle<OracleUpdatedEvent<CoinType, CollectionCoinType>>
     }
 
     struct PoolCreatedEvent<phantom CoinType, phantom CollectionCoinType> has store, drop {
@@ -141,6 +149,11 @@ module collectibleswap::marketplace {
         timestamp: u64
     }
 
+    struct OracleUpdatedEvent<phantom CoinType, phantom CollectionCoinType> has store, drop {
+        last_price_cumulative: u128,
+        timestamp: u64
+    }
+
     // pool creator should create a unique CollectionCoinType for their collection, this function should be provided on
     // collectibleswap front-end
     struct LiquidityCoin<phantom CoinType, phantom CollectionCoinType> {}
@@ -148,7 +161,7 @@ module collectibleswap::marketplace {
     /// Stores resource account signer capability under Liquidswap account.
     struct PoolAccountCap has key { signer_cap: SignerCapability }
 
-    /// Initializes Liquidswap contracts.
+    /// Initializes CollectibleSwap resource account
     public entry fun initialize_script(collectibleswap_admin: &signer) {
         assert!(signer::address_of(collectibleswap_admin) == @collectibleswap, ERR_NOT_ENOUGH_PERMISSIONS_TO_INITIALIZE);
         assert!(!exists<PoolAccountCap>(@collectibleswap), MARKET_ALREADY_INITIALIZED);
@@ -223,10 +236,14 @@ module collectibleswap::marketplace {
             pool_type,
             asset_recipient,
             delta,
-            fee
+            fee,
+            last_price_cumulative: 0,
+            last_block_timestamp: timestamp::now_seconds()
         });
 
-        let token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, collection, token_names, token_creator, property_version);
+        let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+
+        let token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, pool, collection, token_names, token_creator, property_version);
 
         let events_store = EventsStore<CoinType, CollectionCoinType> {
             pool_created_handle: account::new_event_handle<PoolCreatedEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
@@ -234,7 +251,8 @@ module collectibleswap::marketplace {
             liquidity_removed_handle: account::new_event_handle<LiquidityRemovedEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
             swap_tokens_to_coin_handle: account::new_event_handle<SwapTokensToCoinEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
             swap_coin_to_tokens_handle: account::new_event_handle<SwapCoinToTokensEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
-            claim_tokens_handle: account::new_event_handle<ClaimTokensEvent<CoinType, CollectionCoinType>>(&pool_account_signer)
+            claim_tokens_handle: account::new_event_handle<ClaimTokensEvent<CoinType, CollectionCoinType>>(&pool_account_signer),
+            oracle_updated_handle: account::new_event_handle<OracleUpdatedEvent<CoinType, CollectionCoinType>>(&pool_account_signer)
         };
         event::emit_event(
             &mut events_store.pool_created_handle,
@@ -266,12 +284,16 @@ module collectibleswap::marketplace {
         move_to(&pool_account_signer, events_store)
     }
 
-    fun internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account: &signer, collection: String, token_names: &vector<String>, token_creator: address, property_version: u64): vector<token::TokenId> acquires Pool, PoolAccountCap {
+    fun internal_get_tokens_to_pool<CoinType, CollectionCoinType>(
+                                account: &signer, 
+                                pool: &mut Pool<CoinType, CollectionCoinType>, 
+                                collection: String, 
+                                token_names: &vector<String>, 
+                                token_creator: address, 
+                                property_version: u64): vector<token::TokenId> {
         // withdrawing tokens
         let i = 0; // define counter
         let count = vector::length(token_names);
-        let (pool_account_address, _) = get_pool_account_signer();
-        let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
         let token_ids = vector::empty<token::TokenId>();
         while (i < count) {
             let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
@@ -310,6 +332,7 @@ module collectibleswap::marketplace {
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let current_spot_price = pool.spot_price;
         let collection = pool.collection;
         let token_creator = pool.token_creator;
         assert_valid_cointype<CollectionCoinType>(collection, token_creator);
@@ -334,8 +357,10 @@ module collectibleswap::marketplace {
         };
         coin::deposit(sender, liquidity_coin);
 
-        let token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, collection, token_names, token_creator, property_version);
+        let token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, pool, collection, token_names, token_creator, property_version);
         
+       update_oracle<CoinType, CollectionCoinType>(pool, current_spot_price);
+
         let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
         event::emit_event(
             &mut events_store.liquidity_added_handle,
@@ -369,6 +394,7 @@ module collectibleswap::marketplace {
         assert!(lp_amount > 0, LP_MUST_GREATER_THAN_ZERO);
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let current_spot_price = pool.spot_price;
         let collection = pool.collection;
         let token_creator = pool.token_creator;
         assert_valid_cointype<CollectionCoinType>(collection, token_creator);
@@ -422,6 +448,8 @@ module collectibleswap::marketplace {
         };
         coin::deposit(sender, withdrawnable_coin);
 
+        update_oracle<CoinType, CollectionCoinType>(pool, current_spot_price);
+
         let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
         event::emit_event(
             &mut events_store.liquidity_removed_handle,
@@ -461,6 +489,7 @@ module collectibleswap::marketplace {
         assert!(num_nfts > 0, NUM_NFTS_MUST_GREATER_THAN_ZERO);
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let current_spot_price = pool.spot_price;
         let collection = pool.collection;
         let token_creator = pool.token_creator;
         assert_valid_cointype<CollectionCoinType>(collection, token_creator);
@@ -497,6 +526,8 @@ module collectibleswap::marketplace {
             coin::deposit(pool.asset_recipient, input_coin);
         };
 
+        update_oracle<CoinType, CollectionCoinType>(pool, current_spot_price);
+
         let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
         event::emit_event(
             &mut events_store.swap_coin_to_tokens_handle,
@@ -532,6 +563,7 @@ module collectibleswap::marketplace {
         assert!(num_nfts > 0, NUM_NFTS_MUST_GREATER_THAN_ZERO);
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let current_spot_price = pool.spot_price;
         let collection = pool.collection;
         let token_creator = pool.token_creator;
         assert_valid_cointype<CollectionCoinType>(collection, token_creator);
@@ -569,7 +601,7 @@ module collectibleswap::marketplace {
             // send coin to asset_recipient
             coin::deposit(pool.asset_recipient, input_coin);
         };
-
+        update_oracle<CoinType, CollectionCoinType>(pool, current_spot_price);
         let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
         event::emit_event(
             &mut events_store.swap_coin_to_tokens_handle,
@@ -604,6 +636,7 @@ module collectibleswap::marketplace {
         assert!(num_nfts > 0, NUM_NFTS_MUST_GREATER_THAN_ZERO);
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let current_spot_price = pool.spot_price;
         let collection = pool.collection;
         let token_creator = pool.token_creator;
         assert_valid_cointype<CollectionCoinType>(collection, token_creator);
@@ -636,7 +669,13 @@ module collectibleswap::marketplace {
         let new_spot_price = pool.spot_price;
         if (pool.pool_type == POOL_TYPE_TRADING) {
             // get nfts
-            token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(account, collection, token_names, token_creator, property_version);
+            token_ids = internal_get_tokens_to_pool<CoinType, CollectionCoinType>(
+                                            account, 
+                                            pool,
+                                            collection, 
+                                            token_names, 
+                                            token_creator, 
+                                            property_version);
         } else {
             let i = 0; 
             while (i < num_nfts) {
@@ -650,7 +689,7 @@ module collectibleswap::marketplace {
                 i = i + 1;
             };
         };
-
+        update_oracle<CoinType, CollectionCoinType>(pool, current_spot_price);
         let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
         event::emit_event(
             &mut events_store.swap_tokens_to_coin_handle,
@@ -765,6 +804,52 @@ module collectibleswap::marketplace {
             };
             j = j + 1;
         };
+    }
+
+    /// Adds two u128 and makes overflow possible.
+    public fun overflow_add(a: u128, b: u128): u128 {
+        let r = MAX_U128 - b;
+        if (r < a) {
+            return a - r - 1
+        };
+        r = MAX_U128 - a;
+        if (r < b) {
+            return b - r - 1
+        };
+        a + b
+    }
+
+    /// Update current cumulative prices.
+    /// Important: If you want to use the following function take into account prices can be overflowed.
+    /// So it's important to use same logic in your math/algo (as Move doesn't allow overflow). See overflow_add.
+    fun update_oracle<CoinType, CollectionCoinType>(
+        pool: &mut Pool<CoinType, CollectionCoinType>,
+        spot_price: u64
+    ) acquires 
+    PoolAccountCap, EventsStore {
+        let last_block_timestamp = pool.last_block_timestamp;
+        let block_timestamp = timestamp::now_seconds();
+        let time_elapsed = ((block_timestamp - last_block_timestamp) as u128);
+        let (pool_account_address, _) = get_pool_account_signer();
+
+        if (time_elapsed > 0) {
+            let last_price_cumulative = (spot_price as u128) * (time_elapsed as u128);
+
+            pool.last_price_cumulative = 
+            overflow_add(pool.last_price_cumulative, last_price_cumulative);
+
+            let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
+            event::emit_event(
+                &mut events_store.oracle_updated_handle,
+                OracleUpdatedEvent<CoinType, CollectionCoinType> {
+                    last_price_cumulative: pool.last_price_cumulative,
+                    timestamp: timestamp::now_seconds()
+
+                }
+            );
+        };
+
+        pool.last_block_timestamp = block_timestamp;
     }
 
     fun get_buy_info(curve_type: u8, 
