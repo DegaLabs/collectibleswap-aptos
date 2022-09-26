@@ -33,9 +33,9 @@ module collectibleswap::exponential {
                     delta: u64,
                     num_items: u64,
                     fee_multiplier: u64,
-                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64) {
+                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64, u64) {
         if (num_items == 0) {
-            return (1, 0, 0, 0, 0)
+            return (1, 0, 0, 0, 0, 0)
         };
 
         let delta_pow_n = fpow(u256::from_u64(delta), num_items, u256::from_u64(FEE_DIVISOR));
@@ -48,11 +48,12 @@ module collectibleswap::exponential {
 
         let protocol_fee = input_value * protocol_fee_multiplier / FEE_DIVISOR;
 
-        input_value = input_value + input_value * fee_multiplier / FEE_DIVISOR;
+        let trade_fee = input_value * fee_multiplier / FEE_DIVISOR;
+        input_value = input_value + trade_fee;
         input_value = input_value + protocol_fee;
         let new_delta = delta;
 
-        return (0, new_spot_price, new_delta, input_value, protocol_fee)
+        return (0, new_spot_price, new_delta, input_value, protocol_fee, trade_fee)
     }
 
      public entry fun get_sell_info(
@@ -60,9 +61,9 @@ module collectibleswap::exponential {
                     delta: u64,
                     num_items_sell: u64,
                     fee_multiplier: u64,
-                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64) {
+                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64, u64) {
         if (num_items_sell == 0) {
-            return (1, 0, 0, 0, 0)
+            return (1, 0, 0, 0, 0, 0)
         };
 
         let inv_delta = u256::div(u256::mul(u256::from_u64(FEE_DIVISOR), u256::from_u64(FEE_DIVISOR)), u256::from_u64(delta));
@@ -76,9 +77,11 @@ module collectibleswap::exponential {
 
         let output_value = spot_price * ((FEE_DIVISOR - u256::as_u64(inv_delta_pow_n)) * FEE_DIVISOR / (FEE_DIVISOR - u256::as_u64(inv_delta))) / FEE_DIVISOR;
         let protocol_fee = output_value * protocol_fee_multiplier / FEE_DIVISOR;
-        output_value = output_value - output_value * fee_multiplier / FEE_DIVISOR;
+
+        let trade_fee = output_value * fee_multiplier / FEE_DIVISOR;
+        output_value = output_value - trade_fee;
         output_value = output_value - protocol_fee;
 
-        return (0, new_spot_price, delta, output_value, protocol_fee)
+        return (0, new_spot_price, delta, output_value, protocol_fee, trade_fee)
     }
 }

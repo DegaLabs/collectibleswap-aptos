@@ -1,4 +1,4 @@
-module collectibleswap::marketplace {
+module collectibleswap::pool {
     use std::signer;
     use std::string:: {Self, String};
     use std::vector;
@@ -78,7 +78,10 @@ module collectibleswap::marketplace {
         delta: u64,
         fee: u64,
         last_price_cumulative: u128,
-        last_block_timestamp: u64
+        last_block_timestamp: u64,
+        accumulated_volume: u128,
+        accumulated_fees: u128,
+        unrealized_fee: u64
     }
 
     // Events
@@ -238,7 +241,10 @@ module collectibleswap::marketplace {
             delta,
             fee,
             last_price_cumulative: 0,
-            last_block_timestamp: timestamp::now_seconds()
+            last_block_timestamp: timestamp::now_seconds(),
+            accumulated_volume: 0,
+            accumulated_fees: 0,
+            unrealized_fee: 0
         });
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
@@ -743,11 +749,14 @@ module collectibleswap::marketplace {
                 num_nfts: u64, 
                 max_coin_amount: u64, 
                 protocol_fee_multiplier: u64): (u64, u64) {
-        let (error_code, new_spot_price, new_delta, input_value, protocol_fee) = get_buy_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, protocol_fee_multiplier);
+        let (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee, unrealized_fee) = get_buy_info<CoinType, CollectionCoinType>(pool, num_nfts, protocol_fee_multiplier);
         assert!(error_code == 0, FAILED_TO_GET_BUY_INFO);
         assert!(input_value <= max_coin_amount, INPUT_COIN_EXCEED_COIN_AMOUNT);
         pool.spot_price = new_spot_price;
         pool.delta = new_delta;
+        pool.accumulated_volume = overflow_add(pool.accumulated_volume, (input_value as u128));
+        pool.accumulated_fees = overflow_add(pool.accumulated_fees, (trade_fee as u128));
+        pool.unrealized_fee = unrealized_fee;
         (protocol_fee, input_value)
     }
 
@@ -756,7 +765,7 @@ module collectibleswap::marketplace {
                 max_coin_amount: u64): (u64, u64, u64, u64) acquires Pool, PoolAccountCap {
         let (pool_account_address, _) = get_pool_account_signer();
         let pool = borrow_global<Pool<CoinType, CollectionCoinType>>(pool_account_address);
-        let (error_code, new_spot_price, new_delta, input_value, protocol_fee) = get_buy_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, PROTOCOL_FEE_MULTIPLIER);
+        let (error_code, new_spot_price, new_delta, input_value, protocol_fee, _, _) = get_buy_info<CoinType, CollectionCoinType>(pool, num_nfts, PROTOCOL_FEE_MULTIPLIER);
         assert!(error_code == 0, FAILED_TO_GET_BUY_INFO);
         assert!(input_value <= max_coin_amount, INPUT_COIN_EXCEED_COIN_AMOUNT);
         (new_spot_price, new_delta, protocol_fee, input_value)
@@ -767,11 +776,14 @@ module collectibleswap::marketplace {
                 num_nfts: u64, 
                 min_expected_coin_output: u64, 
                 protocol_fee_multiplier: u64): (u64, u64) {
-        let (error_code, new_spot_price, new_delta, output_value, protocol_fee) = get_sell_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, protocol_fee_multiplier);
+        let (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee, unrealized_fee) = get_sell_info<CoinType, CollectionCoinType>(pool, num_nfts, protocol_fee_multiplier);
         assert!(error_code == 0, FAILED_TO_GET_SELL_INFO);
         assert!(output_value >= min_expected_coin_output, INSUFFICIENT_OUTPUT_AMOUNT);
         pool.spot_price = new_spot_price;
         pool.delta = new_delta;
+        pool.accumulated_volume = overflow_add(pool.accumulated_volume, (output_value as u128));
+        pool.accumulated_fees = overflow_add(pool.accumulated_fees, (trade_fee as u128));
+        pool.unrealized_fee = unrealized_fee;
         (protocol_fee, output_value)
     }
 
@@ -781,29 +793,34 @@ module collectibleswap::marketplace {
                  {
         let (pool_account_address, _) = get_pool_account_signer();
         let pool = borrow_global<Pool<CoinType, CollectionCoinType>>(pool_account_address);
-        let (error_code, new_spot_price, new_delta, output_value, protocol_fee) = get_sell_info(pool.curve_type, pool.spot_price, pool.delta, num_nfts, pool.fee, PROTOCOL_FEE_MULTIPLIER);
+        let (error_code, new_spot_price, new_delta, output_value, protocol_fee, _, _) = get_sell_info<CoinType, CollectionCoinType>(pool, num_nfts, PROTOCOL_FEE_MULTIPLIER);
         assert!(error_code == 0, FAILED_TO_GET_SELL_INFO);
         assert!(output_value >= min_expected_coin_output, INSUFFICIENT_OUTPUT_AMOUNT);
         (new_spot_price, new_delta, protocol_fee, output_value)
     }
 
     fun remove_token_id_from_pool_list(token_ids_list: &mut vector<token::TokenId>, token_id: token::TokenId) {
-        let j = 0;
-        let token_ids_count_in_list = vector::length(token_ids_list);
-        while (j < token_ids_count_in_list) {
-            let item = vector::borrow(token_ids_list, j);
-            if (*item == token_id) {
-                if (j == token_ids_count_in_list - 1) {
-                    vector::pop_back(token_ids_list);
-                } else {
-                    let last = vector::pop_back(token_ids_list);
-                    let element_at_deleted_position = vector::borrow_mut(token_ids_list, j);
-                    *element_at_deleted_position = last;
-                };
-                break
-            };
-            j = j + 1;
-        };
+        let (found, index) = vector::index_of(token_ids_list, &token_id);
+        if (found) {
+            vector::remove(token_ids_list, index);
+        }
+
+        // let j = 0;
+        // let token_ids_count_in_list = vector::length(token_ids_list);
+        // while (j < token_ids_count_in_list) {
+        //     let item = vector::borrow(token_ids_list, j);
+        //     if (*item == token_id) {
+        //         if (j == token_ids_count_in_list - 1) {
+        //             vector::pop_back(token_ids_list);
+        //         } else {
+        //             let last = vector::pop_back(token_ids_list);
+        //             let element_at_deleted_position = vector::borrow_mut(token_ids_list, j);
+        //             *element_at_deleted_position = last;
+        //         };
+        //         break
+        //     };
+        //     j = j + 1;
+        // };
     }
 
     /// Adds two u128 and makes overflow possible.
@@ -852,32 +869,52 @@ module collectibleswap::marketplace {
         pool.last_block_timestamp = block_timestamp;
     }
 
-    fun get_buy_info(curve_type: u8, 
-                    spot_price: u64,
-                    delta: u64,
+    fun get_buy_info<CoinType, CollectionCoinType>(
+                    pool: &Pool<CoinType, CollectionCoinType>,
                     num_items: u64,
-                    fee_multiplier: u64,
-                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64) {
-        assert!(curve_type == CURVE_LINEAR_TYPE || curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
-        if (curve_type == CURVE_LINEAR_TYPE) {
-            linear::get_buy_info(spot_price, delta, num_items, fee_multiplier, protocol_fee_multiplier)
+                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64, u64, u64) {
+        assert!(pool.curve_type == CURVE_LINEAR_TYPE || pool.curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
+        let error_code;
+        let new_spot_price;
+        let new_delta;
+        let input_value;
+        let protocol_fee;
+        let trade_fee;
+        if (pool.curve_type == CURVE_LINEAR_TYPE) {
+            (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee) = linear::get_buy_info(pool.spot_price, pool.delta, num_items, pool.fee, protocol_fee_multiplier);
         } else {
-            exponential::get_buy_info(spot_price, delta, num_items, fee_multiplier, protocol_fee_multiplier)
-        } 
+            (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee) = exponential::get_buy_info(pool.spot_price, pool.delta, num_items, pool.fee, protocol_fee_multiplier);
+        }; 
+
+        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        let price_increase = (trade_fee + pool.unrealized_fee) / (current_token_count_in_pool - num_items);
+        let unrealized_fee = (trade_fee + pool.unrealized_fee) - (current_token_count_in_pool - num_items) * price_increase;
+        new_spot_price = new_spot_price + price_increase;
+        (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee, unrealized_fee)
     }
 
-    fun get_sell_info(
-                    curve_type: u8,
-                    spot_price: u64,
-                    delta: u64,
+    fun get_sell_info<CoinType, CollectionCoinType>(
+                    pool: &Pool<CoinType, CollectionCoinType>,
                     num_items: u64,
-                    fee_multiplier: u64,
-                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64) {
-        assert!(curve_type == CURVE_LINEAR_TYPE || curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
-        if (curve_type == CURVE_LINEAR_TYPE) {
-            linear::get_sell_info(spot_price, delta, num_items, fee_multiplier, protocol_fee_multiplier)
+                    protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64, u64, u64) {
+        assert!(pool.curve_type == CURVE_LINEAR_TYPE || pool.curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
+        let error_code;
+        let new_spot_price;
+        let new_delta;
+        let output_value;
+        let protocol_fee;
+        let trade_fee
+        ;
+        if (pool.curve_type == CURVE_LINEAR_TYPE) {
+            (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee) = linear::get_sell_info(pool.spot_price, pool.delta, num_items, pool.fee, protocol_fee_multiplier)
         } else {
-            exponential::get_sell_info(spot_price, delta, num_items, fee_multiplier, protocol_fee_multiplier)
-        } 
+            (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee) = exponential::get_sell_info(pool.spot_price, pool.delta, num_items, pool.fee, protocol_fee_multiplier)
+        }; 
+
+        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        let price_increase = (trade_fee + pool.unrealized_fee) / (current_token_count_in_pool + num_items);
+        let unrealized_fee = (trade_fee + pool.unrealized_fee) - (current_token_count_in_pool + num_items) * price_increase;
+        new_spot_price = new_spot_price + price_increase;
+        (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee, unrealized_fee)
     }
 }
