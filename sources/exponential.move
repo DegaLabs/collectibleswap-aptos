@@ -1,5 +1,5 @@
 module collectibleswap::exponential {
-    use movemate::u256:: {Self, U256};
+    use collectibleswap::u256:: {Self, U256};
     const FEE_DIVISOR: u64 = 10000;
     const MIN_PRICE: u64 = 1;
     public entry fun validate_delta(delta: u64): bool {

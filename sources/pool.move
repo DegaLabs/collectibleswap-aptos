@@ -1,6 +1,7 @@
 module collectibleswap::pool {
     use std::signer;
-    use std::string:: {Self, String};
+    use std::string::String;
+    use std::string;
     use std::vector;
     use std::timestamp;
     use std::type_info;
@@ -8,16 +9,17 @@ module collectibleswap::pool {
     use aptos_framework::account::SignerCapability;
     use aptos_framework::coin::{Self, Coin, BurnCapability, MintCapability, FreezeCapability};
     use aptos_std::event;    
-    use aptos_std::table;
     use std::table_with_length::{Self, TableWithLength};
     use aptos_token::token;
     use std::option;
-    use movemate::math;
-    use movemate::u256;
+    use collectibleswap::math;
+    use collectibleswap::u256;
     use collectibleswap::linear;
+
     use collectibleswap::exponential;
     use collectibleswap::emergency::assert_no_emergency;
-    use collectibleswap::collectiontyperegistry::assert_valid_cointype;
+    use collectibleswap::type_registry::assert_valid_cointype;
+    use liquidity_account::liquidity_coin::LiquidityCoin;
 
     const MAX_U64: u128 = 18446744073709551615;
 
@@ -157,10 +159,6 @@ module collectibleswap::pool {
         timestamp: u64
     }
 
-    // pool creator should create a unique CollectionCoinType for their collection, this function should be provided on
-    // collectibleswap front-end
-    struct LiquidityCoin<phantom CoinType, phantom CollectionCoinType> {}
-
     /// Stores resource account signer capability under Liquidswap account.
     struct PoolAccountCap has key { signer_cap: SignerCapability }
 
@@ -168,8 +166,17 @@ module collectibleswap::pool {
     public entry fun initialize_script(collectibleswap_admin: &signer) {
         assert!(signer::address_of(collectibleswap_admin) == @collectibleswap, ERR_NOT_ENOUGH_PERMISSIONS_TO_INITIALIZE);
         assert!(!exists<PoolAccountCap>(@collectibleswap), MARKET_ALREADY_INITIALIZED);
-        let (_, signer_cap) =
-            account::create_resource_account(collectibleswap_admin, b"collectibleswap_pool_resource_account");
+        let (pool_account, signer_cap) =
+            account::create_resource_account(collectibleswap_admin, b"liquidswap_account_seed");
+
+        let liquidity_coin_metadata_serialized = x"064c50436f696e010000000000000000403239383333374145433830334331323945313337414344443138463135393936323344464146453735324143373738443344354437453231454133443142454389021f8b08000000000002ff2d90c16ec3201044ef7c45e44b4eb13160c0957aeab5952af51845d1b22c8995c45860bbfdfce2b4b79dd59b9dd11e27c01b5ce8c44678d0ee75b77fff7c8bc3b8672ba53cc4715bb535aff99eb123789f2867ca27769fce58b83320c6659c0b56f19f36980e21f4beb5207a05c48d54285b4784ad7306a5e8831460add6ce486dc98014aed78e2b521d5525c3d37af034d1e869c48172fd1157fa9afd7d702776199e49d7799ef24bd314795d5c8df1d1c034c77cb883cbff23c64475012a9668dd4c3668a91c7a41caa2ea8db0da7ace3be965274550c1680ed4f615cb8bf343da3c7fa71ea541135279d0774cb7669387fc6c54b15fb48937414101000001076c705f636f696e5c1f8b08000000000002ff35c8b10980301046e13e53fc0338411027b0b0d42a84535048ee82de5521bb6b615ef5f8b2ec960ea412482e0e91488cd5fb1f501dbe1ebd8d14f3329633b24ac63aa0ef36a136d7dc0b3946fd604b00000000000000";
+        let liquidity_coin_code = x"a11ceb0b050000000501000202020a070c170823200a4305000000010003000100010001076c705f636f696e024c500b64756d6d795f6669656c6435e1873b2a1ae8c609598114c527b57d31ff5274f646ea3ff6ecad86c56d2cf8000201020100";
+
+        aptos_framework::code::publish_package_txn(
+            &pool_account,
+            liquidity_coin_metadata_serialized,
+            vector[liquidity_coin_code]
+        );
         move_to(collectibleswap_admin, PoolAccountCap { signer_cap });
     }
 
@@ -177,6 +184,15 @@ module collectibleswap::pool {
         let pool_account_cap = borrow_global<PoolAccountCap>(@collectibleswap);
         let pool_account = account::create_signer_with_capability(&pool_account_cap.signer_cap);
         return (signer::address_of(&pool_account), pool_account)
+    }
+
+    public fun get_pool_resource_account_address(): address acquires PoolAccountCap {
+        let (addr, _) = get_pool_account_signer();
+        addr
+    }
+
+    public fun is_pool_cap_initialized(): bool {
+        exists<PoolAccountCap>(@collectibleswap)
     }
 
     public fun create_new_pool<CoinType, CollectionCoinType>(
@@ -208,6 +224,8 @@ module collectibleswap::pool {
             true,
         );
 
+        let now_time = 1;
+
         // compute coin amount
         let initial_coin_amount = vector::length(token_names) * initial_spot_price;
         let c = coin::withdraw<CoinType>(account, initial_coin_amount);
@@ -215,10 +233,10 @@ module collectibleswap::pool {
         let liquidity = math::sqrt(initial_coin_amount);
         let liquidity_coin = coin::mint<LiquidityCoin<CoinType, CollectionCoinType>>(liquidity, &mint_capability);
         let sender = signer::address_of(account);
-        if (coin::is_account_registered<LiquidityCoin<CoinType, CollectionCoinType>>(sender)) {
+        if (!coin::is_account_registered<LiquidityCoin<CoinType, CollectionCoinType>>(sender)) {
             coin::register<LiquidityCoin<CoinType, CollectionCoinType>>(account);
         };
-        coin::deposit(sender, liquidity_coin);
+        coin::deposit<LiquidityCoin<CoinType, CollectionCoinType>>(sender, liquidity_coin);
 
         // // create and store new pair
         move_to(&pool_account_signer, Pool<CoinType, CollectionCoinType> {
@@ -241,7 +259,7 @@ module collectibleswap::pool {
             delta,
             fee,
             last_price_cumulative: 0,
-            last_block_timestamp: timestamp::now_seconds(),
+            last_block_timestamp: now_time,
             accumulated_volume: 0,
             accumulated_fees: 0,
             unrealized_fee: 0
@@ -272,7 +290,7 @@ module collectibleswap::pool {
                 delta: delta,
                 fee: fee,
                 pool_creator: sender,
-                timestamp: timestamp::now_seconds()
+                timestamp: now_time
             },
         );
 
@@ -284,10 +302,15 @@ module collectibleswap::pool {
                 token_ids: token_ids,
                 coin_amount: initial_coin_amount,
                 lp_amount: liquidity,
-                timestamp: timestamp::now_seconds()
+                timestamp: now_time
             }
         );
         move_to(&pool_account_signer, events_store)
+    }
+
+    public fun is_pool_exists<CoinType, CollectionCoinType>(): bool acquires PoolAccountCap {
+        let (pool_account_address, _) = get_pool_account_signer();
+        exists<Pool<CoinType, CollectionCoinType>>(pool_account_address)
     }
 
     fun internal_get_tokens_to_pool<CoinType, CollectionCoinType>(
