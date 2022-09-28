@@ -8,8 +8,11 @@ module collectibleswap::pool_tests {
     use aptos_token::token;
     use collectibleswap::type_registry;
     use test_coin_admin::test_helpers;
-    use test_coin_admin::test_helpers:: {CollectionType1, USDC};
+    use test_coin_admin::test_helpers:: {CollectionType1, CollectionType2, CollectionType3, USDC};
 
+    const INITIAL_SPOT_PRICE: u64 = 9;
+    const DELTA: u64 = 1;
+    const FEE: u64 = 100;
     fun initialize_token_names(): vector<String> {
         let ret = vector::empty<String>();
         vector::push_back(&mut ret, utf8(b"token1"));
@@ -67,7 +70,6 @@ module collectibleswap::pool_tests {
                 token_mutate_setting,
                 vector::empty(),
                 vector::empty(),
-
                 vector::empty()
                 );
             let token_id = token::create_token_id_raw(signer::address_of(token_creator), collection_name, *vector::borrow<String>(&token_names, i), 0);
@@ -96,6 +98,61 @@ module collectibleswap::pool_tests {
                     100,
                     0
         )
+    }
+
+    fun create_new_pool_success<CoinType, CollectionType>(coin_admin: &signer, token_creator: &signer, collection: vector<u8>) {
+        type_registry::register<CollectionType>(utf8(collection), signer::address_of(token_creator));
+
+        mint_tokens(token_creator, coin_admin, collection);
+
+        //mint coin USDC
+        test_helpers::mint_to<CoinType>(coin_admin, 2000);
+
+        pool::create_new_pool_script<CoinType, CollectionType>(
+                            coin_admin, 
+                            utf8(collection), 
+                            initialize_token_names(),
+                            @test_token_creator,
+                            INITIAL_SPOT_PRICE,
+                            0,
+                            0,
+                            @test_asset_recipient,
+                            DELTA,
+                            FEE,
+                            0
+                );
+        let  (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            pool_collection, 
+            pool_token_creator, 
+            token_count, 
+            _, 
+            _,
+            spot_price,
+            curve_type,
+            pool_type,
+            asset_recipient,
+            delta,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _ 
+        ) = pool::get_pool_info<CoinType, CollectionType>();
+
+        assert!(reserve_amount == 4 * INITIAL_SPOT_PRICE, 3);
+        assert!(protocol_credit_coin_amount == 0, 3);
+        assert!(pool_collection == utf8(collection), 3);
+        assert!(pool_token_creator == @test_token_creator, 3);
+        assert!(token_count == 4, 3);
+        assert!(spot_price == INITIAL_SPOT_PRICE, 3);
+        assert!(curve_type == 0, 3);
+        assert!(pool_type == 0, 3);
+        assert!(pool_token_creator == @test_token_creator, 3);
+        assert!(asset_recipient == @test_asset_recipient, 3);
+        assert!(delta == DELTA, 3);
     }
 
     #[test]
@@ -129,7 +186,6 @@ module collectibleswap::pool_tests {
         assert!(signer::address_of(&coin_admin) == @test_coin_admin, 1);
 
         initialize_collection_registry(&collectibleswap_admin);
-
         create_new_pool<USDC, CollectionType1>(&coin_admin, b"collection1")
     }
 
@@ -142,18 +198,15 @@ module collectibleswap::pool_tests {
         let token_creator = test_helpers::create_token_creator();
         assert!(signer::address_of(&coin_admin) == @test_coin_admin, 1);
 
+        let collection = b"collection1";
         test_helpers::create_collection_coin<CollectionType1>(&coin_admin);
 
         initialize_collection_registry(&collectibleswap_admin);
 
-        type_registry::register<CollectionType1>(utf8(b"collection1"), @test_token_creator);
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, collection);
+        create_new_pool_success<USDC, CollectionType2>(&coin_admin, &token_creator, b"collection2");
+        create_new_pool_success<USDC, CollectionType3>(&coin_admin, &token_creator, b"collection3")
 
-        mint_tokens(&token_creator, &coin_admin, b"collection1");
-
-        //mint coin USDC
-        test_helpers::mint_to<USDC>(&coin_admin, 2000);
-
-        create_new_pool<USDC, CollectionType1>(&coin_admin, b"collection1")
     }
 
     // fun setup_btc_usdt_pool(): (signer, signer) {

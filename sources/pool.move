@@ -940,4 +940,67 @@ module collectibleswap::pool {
         new_spot_price = new_spot_price + price_increase;
         (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee, unrealized_fee)
     }
+
+    public fun get_pool_info<CoinType, CollectionCoinType>(): 
+                            (
+                                u64,
+                                u64,
+                                String,
+                                address, 
+                                u64, 
+                                vector<token::TokenId>,
+                                vector<token::TokenId>,
+                                u64,
+                                u8,
+                                u8,
+                                address,
+                                u64,
+                                u64,
+                                u128,
+                                u64,
+                                u128,
+                                u128,
+                                u64
+                            ) acquires Pool, PoolAccountCap {
+        let (pool_account_address, _) = get_pool_account_signer();
+        let pool = borrow_global<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let reserve_amount = coin::value(&pool.reserve);
+        let protocol_credit_coin_amount = coin::value(&pool.protocol_credit_coin);
+        let collection = pool.collection;
+        let token_creator = pool.token_creator;
+        let token_count = vector::length(&pool.token_ids_list);
+        let token_ids_list = pool.token_ids_list;
+        let token_ids_list_asset_recipient = pool.token_ids_list_asset_recipient;
+        let spot_price = pool.spot_price;
+        let curve_type = pool.curve_type;
+        let pool_type = pool.pool_type;
+        let asset_recipient = pool.asset_recipient;
+        let delta = pool.delta;
+        let fee = pool.fee;
+        let last_price_cumulative = pool.last_price_cumulative;
+        let last_block_timestamp = pool.last_block_timestamp;
+        let accumulated_volume = pool.accumulated_volume;
+        let accumulated_fees = pool.accumulated_fees;
+        let unrealized_fee = pool.unrealized_fee;
+        (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            collection, 
+            token_creator, 
+            token_count, 
+            token_ids_list, 
+            token_ids_list_asset_recipient,
+            spot_price,
+            curve_type,
+            pool_type,
+            asset_recipient,
+            delta,
+            fee,
+            last_price_cumulative,
+            last_block_timestamp,
+            accumulated_volume,
+            accumulated_fees,
+            unrealized_fee 
+        )
+    }
 }
