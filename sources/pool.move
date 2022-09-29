@@ -5,6 +5,7 @@ module collectibleswap::pool {
     use std::vector;
     use std::timestamp;
     use std::type_info;
+    use aptos_std::comparator::{Self};
     use aptos_framework::account;
     use aptos_framework::account::SignerCapability;
     use aptos_framework::coin::{Self, Coin, BurnCapability, MintCapability, FreezeCapability};
@@ -59,6 +60,7 @@ module collectibleswap::pool {
     const MARKET_ALREADY_INITIALIZED: u64 = 1018;
     const EXCEED_MAX_COIN: u64 = 1019;
     const INSUFFICIENT_NFTS: u64 = 1020;
+    const ERR_CANNOT_BE_THE_SAME_COIN: u64 = 1021;
 
     struct Pool<phantom CoinType, phantom CollectionCoinType> has key {
         reserve: Coin<CoinType>,
@@ -195,6 +197,16 @@ module collectibleswap::pool {
         exists<PoolAccountCap>(@collectibleswap)
     }
 
+    public fun is_sorted<X, Y>(): bool {
+        let order = comparator::compare<type_info::TypeInfo>(&type_info::type_of<X>(), &type_info::type_of<Y>());
+        assert!(!comparator::is_equal(&order), ERR_CANNOT_BE_THE_SAME_COIN);
+        comparator::is_smaller_than(&order)
+    }
+
+    fun get_timestamp(): u64 {
+        timestamp::now_seconds()
+    }
+
     public fun create_new_pool<CoinType, CollectionCoinType>(
                     account: &signer, 
                     collection: String, 
@@ -214,6 +226,7 @@ module collectibleswap::pool {
         assert!(pool_type == POOL_TYPE_TRADING || pool_type == POOL_TYPE_TOKEN || pool_type == POOL_TYPE_COIN, INVALID_POOL_TYPE);
         assert!(curve_type == CURVE_LINEAR_TYPE || curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
         assert!(!exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_ALREADY_EXISTS); 
+        assert!(!exists<Pool<CollectionCoinType, CoinType>>(pool_account_address), PAIR_ALREADY_EXISTS); 
         assert!(vector::length(token_names) > 0, EMPTY_NFTS_INPUT);
         // initialize new coin type to represent this pair's liquidity
         let (burn_capability, freeze_capability, mint_capability) = coin::initialize<LiquidityCoin<CoinType, CollectionCoinType>>(
@@ -224,7 +237,7 @@ module collectibleswap::pool {
             true,
         );
 
-        let now_time = 1;
+        let now_time = get_timestamp();
 
         // compute coin amount
         let initial_coin_amount = vector::length(token_names) * initial_spot_price;
@@ -399,7 +412,7 @@ module collectibleswap::pool {
                 token_ids: token_ids,
                 coin_amount: coin_amount,
                 lp_amount: liquidity,
-                timestamp: timestamp::now_seconds()
+                timestamp: get_timestamp()
             }
         )
     }
@@ -488,7 +501,7 @@ module collectibleswap::pool {
                 token_ids: token_ids,
                 coin_amount: withdrawnable_coin_amount,
                 lp_amount: lp_amount,
-                timestamp: timestamp::now_seconds()
+                timestamp: get_timestamp()
             }
         )
     }
@@ -566,7 +579,7 @@ module collectibleswap::pool {
                 token_ids: token_ids,
                 coin_amount: input_value,
                 new_spot_price: pool.spot_price,
-                timestamp: timestamp::now_seconds()
+                timestamp: get_timestamp()
             }
         )
     }
@@ -640,7 +653,7 @@ module collectibleswap::pool {
                 token_ids: token_ids,
                 coin_amount: input_value,
                 new_spot_price: pool.spot_price,
-                timestamp: timestamp::now_seconds()
+                timestamp: get_timestamp()
             }
         )
     }
@@ -728,7 +741,7 @@ module collectibleswap::pool {
                 token_ids: token_ids,
                 coin_amount: output_amount,
                 new_spot_price: new_spot_price,
-                timestamp: timestamp::now_seconds()
+                timestamp: get_timestamp()
             }
         )
     }
@@ -761,7 +774,7 @@ module collectibleswap::pool {
                 token_creator: token_creator,
                 token_ids: token_ids,
                 asset_recipient: pool.asset_recipient,
-                timestamp: timestamp::now_seconds()
+                timestamp: get_timestamp()
             }
         )
     }
@@ -868,7 +881,7 @@ module collectibleswap::pool {
     ) acquires 
     PoolAccountCap, EventsStore {
         let last_block_timestamp = pool.last_block_timestamp;
-        let block_timestamp = timestamp::now_seconds();
+        let block_timestamp = get_timestamp();
         let time_elapsed = ((block_timestamp - last_block_timestamp) as u128);
         let (pool_account_address, _) = get_pool_account_signer();
 
@@ -883,7 +896,7 @@ module collectibleswap::pool {
                 &mut events_store.oracle_updated_handle,
                 OracleUpdatedEvent<CoinType, CollectionCoinType> {
                     last_price_cumulative: pool.last_price_cumulative,
-                    timestamp: timestamp::now_seconds()
+                    timestamp: get_timestamp()
 
                 }
             );

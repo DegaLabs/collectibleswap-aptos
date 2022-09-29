@@ -2,46 +2,39 @@
 module collectibleswap::pool_tests {
     use std::signer;
     use std::string::utf8;
-    use std::string::String;
+    use std::string::{Self, String};
     use std::vector;
     use collectibleswap::pool;
     use aptos_token::token;
+    use aptos_framework::coin;
+    use std::option;
     use collectibleswap::type_registry;
     use test_coin_admin::test_helpers;
     use test_coin_admin::test_helpers:: {CollectionType1, CollectionType2, CollectionType3, USDC};
-
+    use liquidity_account::liquidity_coin::LiquidityCoin;
+    use collectibleswap::to_string;
+    use aptos_framework::genesis;
     const INITIAL_SPOT_PRICE: u64 = 9;
     const DELTA: u64 = 1;
     const FEE: u64 = 100;
     fun initialize_token_names(): vector<String> {
+        get_token_names(1, 5)
+    }
+
+    fun get_token_names(from: u64, to: u64): vector<String> {
         let ret = vector::empty<String>();
-        vector::push_back(&mut ret, utf8(b"token1"));
-        vector::push_back(&mut ret, utf8(b"token2"));
-        vector::push_back(&mut ret, utf8(b"token3"));
-        vector::push_back(&mut ret, utf8(b"token4"));
+        let i = from;
+        while (i < to) {
+            let token_name = utf8(b"token-");
+            string::append(&mut token_name, to_string::to_string((i as u128)));
+            vector::push_back(&mut ret, token_name);
+            i = i + 1;
+        };
         ret
     }
 
-    fun initialize_token_names1(): vector<String> {
-        let ret = vector::empty<String>();
-        vector::push_back(&mut ret, utf8(b"token1"));
-        ret
-    }
-
-    fun mint_tokens(token_creator: &signer, recipient: &signer, collection: vector<u8>) {
+    fun mint_tokens(token_creator: &signer, recipient: &signer, collection: vector<u8>, token_names: vector<String>) {
         let collection_name = utf8(collection);
-        let mutate_setting = vector::empty<bool>();
-        vector::push_back<bool>(&mut mutate_setting, false);
-        vector::push_back<bool>(&mut mutate_setting, false);
-        vector::push_back<bool>(&mut mutate_setting, false);
-
-        token::create_collection_script(token_creator, 
-                                        collection_name, 
-                                        utf8(b"description"), 
-                                        utf8(b"uri"), 
-                                        100, 
-                                        mutate_setting);
-
 
         let token_mutate_setting = vector::empty<bool>();
         vector::push_back<bool>(&mut token_mutate_setting, false);
@@ -49,9 +42,6 @@ module collectibleswap::pool_tests {
         vector::push_back<bool>(&mut token_mutate_setting, false);
         vector::push_back<bool>(&mut token_mutate_setting, false);
         vector::push_back<bool>(&mut token_mutate_setting, false);
-
-
-        let token_names = initialize_token_names();
 
         let i = 0;
         let tokens_count = vector::length(&token_names);
@@ -88,7 +78,7 @@ module collectibleswap::pool_tests {
         pool::create_new_pool_script<USDC, CollectionType1>(
                     coin_admin, 
                     utf8(collection), 
-                    initialize_token_names1(),
+                    initialize_token_names(),
                     @test_token_creator,
                     1,
                     0,
@@ -103,7 +93,19 @@ module collectibleswap::pool_tests {
     fun create_new_pool_success<CoinType, CollectionType>(coin_admin: &signer, token_creator: &signer, collection: vector<u8>) {
         type_registry::register<CollectionType>(utf8(collection), signer::address_of(token_creator));
 
-        mint_tokens(token_creator, coin_admin, collection);
+        let mutate_setting = vector::empty<bool>();
+        vector::push_back<bool>(&mut mutate_setting, false);
+        vector::push_back<bool>(&mut mutate_setting, false);
+        vector::push_back<bool>(&mut mutate_setting, false);
+
+        token::create_collection_script(token_creator, 
+                                        utf8(collection), 
+                                        utf8(b"description"), 
+                                        utf8(b"uri"), 
+                                        100, 
+                                        mutate_setting);
+
+        mint_tokens(token_creator, coin_admin, collection, initialize_token_names());
 
         //mint coin USDC
         test_helpers::mint_to<CoinType>(coin_admin, 2000);
@@ -153,6 +155,21 @@ module collectibleswap::pool_tests {
         assert!(pool_token_creator == @test_token_creator, 3);
         assert!(asset_recipient == @test_asset_recipient, 3);
         assert!(delta == DELTA, 3);
+
+        let supply = coin::supply<LiquidityCoin<CoinType, CollectionType>>();
+        let liquidity_coin_supply = option::extract(&mut supply);
+        assert!(liquidity_coin_supply == 6, 4);
+    }
+
+    fun prepare(): (signer, signer, signer) {
+        genesis::setup();
+        let collectibleswap_admin = test_helpers::create_collectibleswap_admin();
+        let coin_admin = test_helpers::create_admin_with_coins();
+        let token_creator = test_helpers::create_token_creator();
+
+        pool::initialize_script(&collectibleswap_admin);
+        initialize_collection_registry(&collectibleswap_admin);
+        (collectibleswap_admin, coin_admin, token_creator)
     }
 
     #[test]
@@ -192,21 +209,36 @@ module collectibleswap::pool_tests {
 
     #[test]
     fun test_create_new_pool_success() {
-        let collectibleswap_admin = test_helpers::create_collectibleswap_admin();
-        pool::initialize_script(&collectibleswap_admin);
-        let coin_admin = test_helpers::create_admin_with_coins();
-        let token_creator = test_helpers::create_token_creator();
-        assert!(signer::address_of(&coin_admin) == @test_coin_admin, 1);
+        let (_, coin_admin, token_creator) = prepare();
 
-        let collection = b"collection1";
-        test_helpers::create_collection_coin<CollectionType1>(&coin_admin);
-
-        initialize_collection_registry(&collectibleswap_admin);
-
-        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, collection);
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
         create_new_pool_success<USDC, CollectionType2>(&coin_admin, &token_creator, b"collection2");
         create_new_pool_success<USDC, CollectionType3>(&coin_admin, &token_creator, b"collection3")
+    }
 
+    #[test]
+    #[expected_failure]
+    fun pool_already_exist() {
+        let (_, coin_admin, token_creator) = prepare();
+
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
+        create_new_pool_success<CollectionType1, USDC>(&coin_admin, &token_creator, b"collection2");
+    }
+
+    #[test]
+    fun add_liquidity() {
+        let (_, coin_admin, token_creator) = prepare();
+
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
+        
+        let token_names = get_token_names(5, 9);
+        mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
+
+        pool::add_liquidity_script<USDC, CollectionType1>(&coin_admin, 1000, token_names, 0);
+
+        let supply = coin::supply<LiquidityCoin<USDC, CollectionType1>>();
+        let liquidity_coin_supply = option::extract(&mut supply);
+        assert!(liquidity_coin_supply == 12, 4);
     }
 
     // fun setup_btc_usdt_pool(): (signer, signer) {

@@ -58,6 +58,10 @@ module test_coin_admin::test_helpers {
         account::create_account_for_test(@test_coin_admin)
     }
 
+    public fun create_aptos_framework(): signer {
+        account::create_account_for_test(@aptos_framework)
+    }
+
     public fun create_admin_with_coins(): signer {
         let coin_admin = create_coin_admin();
         register_coins(&coin_admin);
