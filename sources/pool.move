@@ -28,9 +28,9 @@ module collectibleswap::pool {
     const MAX_U128: u128 = 340282366920938463463374607431768211455;
 
     const ESELLER_CAN_NOT_BE_BUYER: u64 = 1;
-    const FEE_DENOMINATOR: u64 = 10000;
     const FEE_DIVISOR: u64 = 10000;
-    const PROTOCOL_FEE_MULTIPLIER: u64 = 100;   //1%
+    const PROTOCOL_FEE_MULTIPLIER: u64 = 25;   //1%
+    const POOL_FEE_MULTIPLIER: u64 = 125;   //1%
 
     const POOL_TYPE_COIN: u8 = 0;
     const POOL_TYPE_TOKEN: u8 = 1;
@@ -220,7 +220,6 @@ module collectibleswap::pool {
                     pool_type: u8,
                     asset_recipient: address,
                     delta: u64,
-                    fee: u64,
                     property_version: u64) acquires Pool, PoolAccountCap {
         // make sure pair does not exist already
         assert_no_emergency();
@@ -239,6 +238,7 @@ module collectibleswap::pool {
             9,
             true,
         );
+        let fee = POOL_FEE_MULTIPLIER;
 
         let now_time = get_timestamp();
 
@@ -362,9 +362,8 @@ module collectibleswap::pool {
                                     pool_type: u8,
                                     asset_recipient: address,
                                     delta: u64,
-                                    fee: u64,
                                     property_version: u64) acquires Pool, PoolAccountCap {
-        create_new_pool<CoinType, CollectionCoinType>(account, collection, &token_names, token_creator, initial_spot_price, curve_type, pool_type, asset_recipient, delta, fee, property_version)
+        create_new_pool<CoinType, CollectionCoinType>(account, collection, &token_names, token_creator, initial_spot_price, curve_type, pool_type, asset_recipient, delta, property_version)
     }
 
     public fun add_liquidity<CoinType, CollectionCoinType> (

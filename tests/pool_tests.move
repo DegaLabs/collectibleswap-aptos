@@ -16,7 +16,8 @@ module collectibleswap::pool_tests {
     use aptos_framework::genesis;
     const INITIAL_SPOT_PRICE: u64 = 900;
     const DELTA: u64 = 1;
-    const FEE: u64 = 100;
+    const FEE: u64 = 125;   //1%
+    const PROTOCOL_FEE_MULTIPLIER: u64 = 25;   //1%
     const CURVE_TYPE: u8 = 0;
     const POOL_TYPE: u8 = 2;
     fun initialize_token_names(): vector<String> {
@@ -92,8 +93,7 @@ module collectibleswap::pool_tests {
                     0,
                     0,
                     @test_asset_recipient,
-                    1,
-                    100,
+                    DELTA,
                     0
         )
     }
@@ -128,7 +128,6 @@ module collectibleswap::pool_tests {
                             pool_type,
                             @test_asset_recipient,
                             DELTA,
-                            FEE,
                             0
                 );
         let  (

@@ -24,8 +24,9 @@ module collectibleswap::linear {
         let buy_spot_price = spot_price + delta;
         let input_value = num_items * buy_spot_price + num_items * (num_items - 1) * delta / 2;
 
-        let protocol_fee = input_value * protocol_fee_multiplier / FEE_DIVISOR;
+        let total_fee = input_value * (protocol_fee_multiplier + fee_multiplier) / FEE_DIVISOR;
         let trade_fee = input_value * fee_multiplier / FEE_DIVISOR;
+        let protocol_fee = total_fee - trade_fee;
         input_value = input_value + trade_fee;
         input_value = input_value + protocol_fee;
         let new_delta = delta;
@@ -54,9 +55,10 @@ module collectibleswap::linear {
         };
 
         let output_value = spot_price * num_items - num_items * (num_items - 1) * delta / 2;
-        let protocol_fee = output_value * protocol_fee_multiplier / FEE_DIVISOR;
 
+        let total_fee = output_value * (protocol_fee_multiplier + fee_multiplier) / FEE_DIVISOR;
         let trade_fee = output_value * fee_multiplier / FEE_DIVISOR;
+        let protocol_fee = total_fee - trade_fee;
         output_value = output_value - trade_fee;
         output_value = output_value - protocol_fee;
 
