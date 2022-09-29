@@ -17,6 +17,8 @@ module collectibleswap::pool_tests {
     const INITIAL_SPOT_PRICE: u64 = 900;
     const DELTA: u64 = 1;
     const FEE: u64 = 100;
+    const CURVE_TYPE: u8 = 0;
+    const POOL_TYPE: u8 = 2;
     fun initialize_token_names(): vector<String> {
         get_token_names(1, 5)
     }
@@ -96,7 +98,7 @@ module collectibleswap::pool_tests {
         )
     }
 
-    fun create_new_pool_success<CoinType, CollectionType>(coin_admin: &signer, token_creator: &signer, collection: vector<u8>) {
+    fun create_new_pool_success<CoinType, CollectionType>(coin_admin: &signer, token_creator: &signer, collection: vector<u8>, curve_type: u8, pool_type: u8) {
         type_registry::register<CollectionType>(utf8(collection), signer::address_of(token_creator));
 
         let mutate_setting = vector::empty<bool>();
@@ -122,8 +124,8 @@ module collectibleswap::pool_tests {
                             initialize_token_names(),
                             @test_token_creator,
                             INITIAL_SPOT_PRICE,
-                            0,
-                            0,
+                            curve_type,
+                            pool_type,
                             @test_asset_recipient,
                             DELTA,
                             FEE,
@@ -156,8 +158,10 @@ module collectibleswap::pool_tests {
         assert!(pool_token_creator == @test_token_creator, 3);
         assert!(token_count == 4, 3);
         assert!(spot_price == INITIAL_SPOT_PRICE, 3);
-        assert!(curve_type == 0, 3);
-        assert!(pool_type == 0, 3);
+        assert!(curve_type == curve_type, 3);
+        assert!(pool_type == pool_type, 3);
+
+
         assert!(pool_token_creator == @test_token_creator, 3);
         assert!(asset_recipient == @test_asset_recipient, 3);
         assert!(delta == DELTA, 3);
@@ -165,6 +169,7 @@ module collectibleswap::pool_tests {
         let supply = coin::supply<LiquidityCoin<CoinType, CollectionType>>();
         let liquidity_coin_supply = option::extract(&mut supply);
         assert!(liquidity_coin_supply == 60, 4);
+        assert!(pool::check_pool_valid<CoinType, CollectionType>(), 4)
     }
 
     fun prepare(): (signer, signer, signer) {
@@ -217,9 +222,9 @@ module collectibleswap::pool_tests {
     fun test_create_new_pool_success() {
         let (_, coin_admin, token_creator) = prepare();
 
-        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
-        create_new_pool_success<USDC, CollectionType2>(&coin_admin, &token_creator, b"collection2");
-        create_new_pool_success<USDC, CollectionType3>(&coin_admin, &token_creator, b"collection3")
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
+        create_new_pool_success<USDC, CollectionType2>(&coin_admin, &token_creator, b"collection2", CURVE_TYPE, POOL_TYPE);
+        create_new_pool_success<USDC, CollectionType3>(&coin_admin, &token_creator, b"collection3", CURVE_TYPE, POOL_TYPE)
     }
 
     #[test]
@@ -227,15 +232,15 @@ module collectibleswap::pool_tests {
     fun pool_already_exist() {
         let (_, coin_admin, token_creator) = prepare();
 
-        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
-        create_new_pool_success<CollectionType1, USDC>(&coin_admin, &token_creator, b"collection2");
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
+        create_new_pool_success<CollectionType1, USDC>(&coin_admin, &token_creator, b"collection2", CURVE_TYPE, POOL_TYPE);
     }
 
     #[test]
     fun add_liquidity() {
         let (_, coin_admin, token_creator) = prepare();
 
-        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
         
         let token_names = get_token_names(5, 9);
         mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
@@ -245,13 +250,14 @@ module collectibleswap::pool_tests {
         let supply = coin::supply<LiquidityCoin<USDC, CollectionType1>>();
         let liquidity_coin_supply = option::extract(&mut supply);
         assert!(liquidity_coin_supply == 120, 4);
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
     }
 
     #[test]
     fun remove_liquidity_even() {
         let (_, coin_admin, token_creator) = prepare();
 
-        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
         
         let token_names = get_token_names(5, 9);
         mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
@@ -265,14 +271,15 @@ module collectibleswap::pool_tests {
         pool::remove_liquidity<USDC, CollectionType1>(&coin_admin, 0, 0, 60);
 
         assert!(get_lp_supply<USDC, CollectionType1>() == 60, 4);    
-        assert!(usdc_balance + 3600 == coin::balance<USDC>(@test_coin_admin), 4)    
+        assert!(usdc_balance + 3600 == coin::balance<USDC>(@test_coin_admin), 4);    
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
     }
 
     #[test]
     fun remove_liquidity_uneven1() {
         let (_, coin_admin, token_creator) = prepare();
 
-        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
         
         let token_names = get_token_names(5, 9);
         mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
@@ -313,13 +320,14 @@ module collectibleswap::pool_tests {
         assert!(protocol_credit_coin_amount == 0, 4);
         assert!(token_count == 6, 4);
         assert!(spot_price == INITIAL_SPOT_PRICE, 4);  
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
     }
 
     #[test]
     fun remove_liquidity_uneven2() {
         let (_, coin_admin, token_creator) = prepare();
 
-        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
         
         let token_names = get_token_names(5, 9);
         mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
@@ -360,13 +368,15 @@ module collectibleswap::pool_tests {
         assert!(protocol_credit_coin_amount == 0, 4);
         assert!(token_count == 5, 4);
         assert!(spot_price == INITIAL_SPOT_PRICE, 4);  
+
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
     }
 
     #[test]
     fun remove_liquidity_uneven3() {
         let (_, coin_admin, token_creator) = prepare();
 
-        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1");
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
         
         let token_names = get_token_names(5, 9);
         mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
@@ -407,5 +417,23 @@ module collectibleswap::pool_tests {
         assert!(protocol_credit_coin_amount == 0, 4);
         assert!(token_count == 4, 4);
         assert!(spot_price == INITIAL_SPOT_PRICE, 4);  
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
+    }
+
+    #[test]
+    fun test_buy_nfts_1() {
+        let (_, coin_admin, token_creator) = prepare();
+
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
+        
+        let token_names = get_token_names(5, 9);
+        mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
+
+        pool::add_liquidity_script<USDC, CollectionType1>(&coin_admin, 1000000, token_names, 0);
+
+        // swap
+        pool::swap_coin_to_any_tokens_script<USDC, CollectionType1>(&coin_admin, 1, 10000);
+        pool::swap_coin_to_any_tokens_script<USDC, CollectionType1>(&coin_admin, 1, 10000);
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
     }
 }

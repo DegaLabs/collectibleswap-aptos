@@ -61,6 +61,9 @@ module collectibleswap::pool {
     const EXCEED_MAX_COIN: u64 = 1019;
     const INSUFFICIENT_NFTS: u64 = 1020;
     const ERR_CANNOT_BE_THE_SAME_COIN: u64 = 1021;
+    const ERR_NOT_ENOUGH_PERMISSIONS_TO_CLAIM: u64 = 1022;
+    const TOKEN_POOL_LENGTH_NOT_VALID: u64 = 1023;
+    const TOKEN_POOL_NOT_VALID: u64 = 1024;
 
     struct Pool<phantom CoinType, phantom CollectionCoinType> has key {
         reserve: Coin<CoinType>,
@@ -368,7 +371,7 @@ module collectibleswap::pool {
                                     account: &signer,
                                     max_coin_amount: u64,
                                     token_names: &vector<String>,
-                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore
+                                    property_version: u64): u64 acquires Pool, PoolAccountCap, EventsStore
                                     {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
@@ -414,14 +417,15 @@ module collectibleswap::pool {
                 lp_amount: liquidity,
                 timestamp: get_timestamp()
             }
-        )
+        );
+        liquidity
     }
 
     public entry fun add_liquidity_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     max_coin_amount: u64,
                                     token_names: vector<String>,
-                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore {
+                                    property_version: u64): u64 acquires Pool, PoolAccountCap, EventsStore {
         add_liquidity<CoinType, CollectionCoinType>(account, max_coin_amount, &token_names, property_version)
     }
 
@@ -429,7 +433,7 @@ module collectibleswap::pool {
                                     account: &signer,
                                     min_coin_amount: u64, 
                                     min_nfts: u64,
-                                    lp_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
+                                    lp_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -503,28 +507,30 @@ module collectibleswap::pool {
                 lp_amount: lp_amount,
                 timestamp: get_timestamp()
             }
-        )
+        );
+
+        (withdrawnable_coin_amount, token_ids)
     }
 
     public entry fun remove_liquidity_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     min_coin_amount: u64, 
                                     min_nfts: u64,
-                                    lp_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
+                                    lp_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore {
         remove_liquidity<CoinType, CollectionCoinType>(account, min_coin_amount, min_nfts, lp_amount)
     }
 
     public entry fun swap_coin_to_any_tokens_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     num_nfts: u64,
-                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
+                                    max_coin_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore {
         swap_coin_to_any_tokens<CoinType, CollectionCoinType>(account, num_nfts, max_coin_amount)
     }
 
     public fun swap_coin_to_any_tokens<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     num_nfts: u64,
-                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
+                                    max_coin_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -581,14 +587,15 @@ module collectibleswap::pool {
                 new_spot_price: pool.spot_price,
                 timestamp: get_timestamp()
             }
-        )
+        );
+        (input_value, token_ids)
     }
 
     public entry fun swap_coin_to_specific_tokens<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     token_names: vector<String>,
                                     property_version: u64,
-                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore
+                                    max_coin_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore
                                      {
         swap_coin_to_specific<CoinType, CollectionCoinType>(account, &token_names, property_version, max_coin_amount)
     }
@@ -597,7 +604,7 @@ module collectibleswap::pool {
                                     account: &signer,
                                     token_names: &vector<String>,
                                     property_version: u64,
-                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
+                                    max_coin_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -655,22 +662,24 @@ module collectibleswap::pool {
                 new_spot_price: pool.spot_price,
                 timestamp: get_timestamp()
             }
-        )
+        );
+
+        (input_value, token_ids)
     }
 
     public entry fun swap_tokens_to_coin_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     token_names: vector<String>,
                                     min_coin_output: u64,
-                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore {
-        swap_tokens_to_coin<CoinType, CollectionCoinType>(account, &token_names, min_coin_output, property_version);
+                                    property_version: u64): u64 acquires Pool, PoolAccountCap, EventsStore {
+        swap_tokens_to_coin<CoinType, CollectionCoinType>(account, &token_names, min_coin_output, property_version)
     }
 
     public fun swap_tokens_to_coin<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     token_names: &vector<String>,
                                     min_coin_output: u64,
-                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore {
+                                    property_version: u64): u64 acquires Pool, PoolAccountCap, EventsStore {
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -743,16 +752,17 @@ module collectibleswap::pool {
                 new_spot_price: new_spot_price,
                 timestamp: get_timestamp()
             }
-        )
+        );
+        output_amount
     }
 
-    public entry fun claim_tokens_script<CoinType, CollectionCoinType>(account: &signer) acquires Pool, PoolAccountCap, EventsStore {
+    public entry fun claim_tokens_script<CoinType, CollectionCoinType>(account: &signer): vector<token::TokenId> acquires Pool, PoolAccountCap, EventsStore {
         let i = 0; 
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
-
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        assert!(signer::address_of(account) == pool.asset_recipient, ERR_NOT_ENOUGH_PERMISSIONS_TO_CLAIM);
         let collection = pool.collection;
         let token_creator = pool.token_creator;
         assert_valid_cointype<CollectionCoinType>(collection, token_creator);
@@ -776,7 +786,8 @@ module collectibleswap::pool {
                 asset_recipient: pool.asset_recipient,
                 timestamp: get_timestamp()
             }
-        )
+        );
+        token_ids
     }
 
 
@@ -840,23 +851,6 @@ module collectibleswap::pool {
         if (found) {
             vector::remove(token_ids_list, index);
         }
-
-        // let j = 0;
-        // let token_ids_count_in_list = vector::length(token_ids_list);
-        // while (j < token_ids_count_in_list) {
-        //     let item = vector::borrow(token_ids_list, j);
-        //     if (*item == token_id) {
-        //         if (j == token_ids_count_in_list - 1) {
-        //             vector::pop_back(token_ids_list);
-        //         } else {
-        //             let last = vector::pop_back(token_ids_list);
-        //             let element_at_deleted_position = vector::borrow_mut(token_ids_list, j);
-        //             *element_at_deleted_position = last;
-        //         };
-        //         break
-        //     };
-        //     j = j + 1;
-        // };
     }
 
     /// Adds two u128 and makes overflow possible.
@@ -952,6 +946,24 @@ module collectibleswap::pool {
         let unrealized_fee = (trade_fee + pool.unrealized_fee) - (current_token_count_in_pool + num_items) * price_increase;
         new_spot_price = new_spot_price + price_increase;
         (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee, unrealized_fee)
+    }
+
+    public fun check_pool_valid<CoinType, CollectionCoinType>(): bool acquires Pool, PoolAccountCap {
+        let (pool_account_address, _) = get_pool_account_signer();
+        let pool = borrow_global<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        if (vector::length(&pool.token_ids_list) != table_with_length::length(&pool.tokens)) {
+            return false
+        };
+        let i = 0;
+        let count = vector::length(&pool.token_ids_list);
+        while (i < count) {
+            let token_id = *vector::borrow(&pool.token_ids_list, i);
+            if(!table_with_length::contains(&pool.tokens, token_id)) {
+                return false
+            };
+            i = i + 1;
+        };
+        true
     }
 
     public fun get_pool_info<CoinType, CollectionCoinType>(): 
