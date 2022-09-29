@@ -342,10 +342,16 @@ module collectibleswap::pool {
         let token_ids = vector::empty<token::TokenId>();
         while (i < count) {
             let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
-            vector::push_back<token::TokenId>(&mut token_ids, token_id);
             let token = token::withdraw_token(account, token_id, 1);
-            vector::push_back(&mut pool.token_ids_list, token_id);
-            table_with_length::add(&mut pool.tokens, token_id, token);
+            vector::push_back<token::TokenId>(&mut token_ids, token_id);
+            if (!table_with_length::contains(&pool.tokens, token_id)) {
+                vector::push_back(&mut pool.token_ids_list, token_id);
+                table_with_length::add(&mut pool.tokens, token_id, token);
+            } else {
+                let recipient_token = table_with_length::borrow_mut(&mut pool.tokens, token_id);
+                token::merge(recipient_token, token);
+            };
+            
             i = i + 1;
         };
         return token_ids
@@ -479,9 +485,9 @@ module collectibleswap::pool {
         let i = 0; 
         let token_ids = vector::empty<token::TokenId>();
         while (i < num_nfts_to_withdraw) {
-            let token_id = vector::pop_back(&mut pool.token_ids_list);
+            let token_id = *vector::borrow(&pool.token_ids_list, 0);
             vector::push_back<token::TokenId>(&mut token_ids, token_id);
-            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
+            let token = remove_token_from_pool(&mut pool.tokens, &mut pool.token_ids_list, &token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
@@ -552,9 +558,9 @@ module collectibleswap::pool {
         let i = 0; 
         let token_ids = vector::empty<token::TokenId>();
         while (i < num_nfts) {
-            let token_id = vector::pop_back(&mut pool.token_ids_list);
+            let token_id = *vector::borrow(&mut pool.token_ids_list, 0);
             vector::push_back<token::TokenId>(&mut token_ids, token_id);
-            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
+            let token = remove_token_from_pool(&mut pool.tokens, &mut pool.token_ids_list, &token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
@@ -629,9 +635,7 @@ module collectibleswap::pool {
         while (i < num_nfts) {
             let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
             vector::push_back<token::TokenId>(&mut token_ids, token_id);
-            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
-            // removing token_id from token_ids_list
-            remove_token_id_from_pool_list(&mut pool.token_ids_list, token_id);
+            let token = remove_token_from_pool(&mut pool.tokens, &mut pool.token_ids_list, &token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
@@ -664,6 +668,19 @@ module collectibleswap::pool {
         );
 
         (input_value, token_ids)
+    }
+
+    fun remove_token_from_pool(tokens: &mut TableWithLength<token::TokenId, token::Token>, token_ids_list: &mut vector<token::TokenId>, token_id: &token::TokenId): token::Token {
+        let t = table_with_length::borrow(tokens, *token_id);
+        let token_amount = token::get_token_amount(t);
+        if (token_amount > 1) {
+            let token = table_with_length::borrow_mut(tokens, *token_id);
+            let created_token = token::split(token, 1);
+            return created_token
+        } else {
+            remove_token_id_from_pool_list(token_ids_list, *token_id);
+            table_with_length::remove(tokens, *token_id)
+        }
     }
 
     public entry fun swap_tokens_to_coin_script<CoinType, CollectionCoinType> (
@@ -731,11 +748,16 @@ module collectibleswap::pool {
             while (i < num_nfts) {
                 let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
                 vector::push_back<token::TokenId>(&mut token_ids, token_id);
-                let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
-                remove_token_id_from_pool_list(&mut pool.token_ids_list, token_id);
+
+                let token = token::withdraw_token(account, token_id, 1);
                 //deposit token for asset recipients to claim
-                table_with_length::add<token::TokenId, token::Token>(&mut pool.tokens_for_asset_recipient, token_id, token);
-                vector::push_back<token::TokenId>(&mut pool.token_ids_list_asset_recipient, token_id);
+                if (!table_with_length::contains(&pool.tokens_for_asset_recipient, token_id)) {
+                    table_with_length::add<token::TokenId, token::Token>(&mut pool.tokens_for_asset_recipient, token_id, token);
+                    vector::push_back<token::TokenId>(&mut pool.token_ids_list_asset_recipient, token_id);
+                } else {
+                    let recipient_token = table_with_length::borrow_mut(&mut pool.tokens_for_asset_recipient, token_id);
+                    token::merge(recipient_token, token);
+                };
                 i = i + 1;
             };
         };
@@ -770,7 +792,7 @@ module collectibleswap::pool {
         while (i < num_nfts) {
             let token_id = vector::pop_back(&mut pool.token_ids_list_asset_recipient);
             vector::push_back<token::TokenId>(&mut token_ids, token_id);
-            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens, token_id);
+            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens_for_asset_recipient, token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
