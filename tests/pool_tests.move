@@ -432,7 +432,24 @@ module collectibleswap::pool_tests {
 
         // swap
         pool::swap_coin_to_any_tokens_script<USDC, CollectionType1>(&coin_admin, 1, 10000);
-        pool::swap_coin_to_any_tokens_script<USDC, CollectionType1>(&coin_admin, 1, 10000);
+        pool::swap_coin_to_any_tokens_script<USDC, CollectionType1>(&coin_admin, 2, 10000);
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
+    }
+
+    #[test]
+    fun test_sell_nfts_1() {
+        let (_, coin_admin, token_creator) = prepare();
+
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
+        
+        let token_names = get_token_names(5, 9);
+        mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
+
+        pool::add_liquidity_script<USDC, CollectionType1>(&coin_admin, 1000000, token_names, 0);
+
+        mint_tokens(&token_creator, &coin_admin, b"collection1", get_token_names(9, 11));
+        // swap
+        pool::swap_tokens_to_coin_script<USDC, CollectionType1>(&coin_admin, get_token_names(9, 11), 0, 0);
         assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
     }
 }
