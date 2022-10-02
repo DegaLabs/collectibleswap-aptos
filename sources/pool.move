@@ -64,6 +64,8 @@ module collectibleswap::pool {
     const ERR_NOT_ENOUGH_PERMISSIONS_TO_CLAIM: u64 = 1022;
     const TOKEN_POOL_LENGTH_NOT_VALID: u64 = 1023;
     const TOKEN_POOL_NOT_VALID: u64 = 1024;
+    const DELTA_INVALID: u64 = 1025;
+    const POOL_INITIAL_PRICE_INVALID: u64 = 1026;
 
     struct Pool<phantom CoinType, phantom CollectionCoinType> has key {
         reserve: Coin<CoinType>,
@@ -280,6 +282,14 @@ module collectibleswap::pool {
             accumulated_fees: 0,
             unrealized_fee: 0
         });
+
+        if (curve_type == CURVE_LINEAR_TYPE) {
+            assert!(linear::validate_delta(delta), DELTA_INVALID);
+            assert!(linear::validate_spot_price(initial_spot_price), POOL_INITIAL_PRICE_INVALID);
+        } else {
+            assert!(exponential::validate_delta(delta), DELTA_INVALID);
+            assert!(exponential::validate_spot_price(initial_spot_price), POOL_INITIAL_PRICE_INVALID);
+        };
 
         let pool = borrow_global_mut<Pool<CoinType, CollectionCoinType>>(pool_account_address);
 

@@ -3,13 +3,14 @@ module collectibleswap::exponential {
     const FEE_DIVISOR: u64 = 10000;
     const MIN_PRICE: u64 = 1;
     public entry fun validate_delta(delta: u64): bool {
-        delta > FEE_DIVISOR        
+        delta >= FEE_DIVISOR        
     }
 
     public entry fun validate_spot_price(_new_spot_price: u64): bool {
         _new_spot_price > MIN_PRICE
     }
 
+    // ret = base_unit * (x/base_unit) ^ n
     fun fpow(x: U256, n: u64, base_unit: U256): U256 {
         let z = u256::from_u64((0 as u64));
         if (u256::compare(&x, &z) == 0) {
@@ -22,6 +23,7 @@ module collectibleswap::exponential {
             while (i < n) {
                 z = u256::mul(z, x);
                 z = u256::div(z, base_unit);
+                i = i + 1;
             };
         };
 
@@ -84,5 +86,25 @@ module collectibleswap::exponential {
         output_value = output_value - protocol_fee;
 
         return (0, new_spot_price, delta, output_value, protocol_fee, trade_fee)
+    }
+
+    #[test]
+    fun test_fpow() {
+        let ret = fpow(u256::from_u64(2), 4, u256::from_u64(2));
+        assert!(u256::as_u64(ret) == 2, 5);
+        assert!(u256::as_u64(fpow(u256::from_u64(4), 4, u256::from_u64(2))) == 32, 5);
+
+        assert!(u256::as_u64(fpow(u256::from_u64(11000), 1, u256::from_u64(FEE_DIVISOR))) >= FEE_DIVISOR, 5);
+    }
+
+    #[test]
+    fun test_get_buy_info() {
+        let (_, new_spot_price, _, _, _, _) = get_buy_info(
+                                                900,
+                                                11000,
+                                                1,
+                                                125,
+                                                25);
+        assert!(new_spot_price > 0, 5);
     }
 }

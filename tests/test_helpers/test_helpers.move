@@ -17,11 +17,9 @@ module test_coin_admin::test_helpers {
     use collectibleswap::to_string;
     use aptos_framework::genesis;
 
-
     const INITIAL_SPOT_PRICE: u64 = 900;
-    const DELTA: u64 = 100;
-    const FEE: u64 = 125;   //1.25%
-    const PROTOCOL_FEE_MULTIPLIER: u64 = 25;   //0.25%
+    const DELTA_LINEAR: u64 = 100;
+    const DELTA_EXPONENTIAL: u64 = 11000;
     const CURVE_TYPE: u8 = 0;
     const POOL_TYPE: u8 = 2;
 
@@ -38,6 +36,13 @@ module test_coin_admin::test_helpers {
     struct Capabilities<phantom CoinType> has key {
         mint_cap: MintCapability<CoinType>,
         burn_cap: BurnCapability<CoinType>,
+    }
+
+    public fun get_delta(curve_type: u8): u64 {
+        if (curve_type == 0) {
+            return DELTA_LINEAR
+        };
+        return DELTA_EXPONENTIAL
     }
 
     // Register one coin with custom details.
@@ -256,7 +261,7 @@ module test_coin_admin::test_helpers {
                     0,
                     0,
                     @test_asset_recipient,
-                    DELTA,
+                    get_delta(0),
                     0
         )
     }
@@ -290,7 +295,7 @@ module test_coin_admin::test_helpers {
                             curve_type,
                             pool_type,
                             @test_asset_recipient,
-                            DELTA,
+                            get_delta(curve_type),
                             0
                 );
         let  (
@@ -326,7 +331,7 @@ module test_coin_admin::test_helpers {
 
         assert!(pool_token_creator == @test_token_creator, 3);
         assert!(asset_recipient == @test_asset_recipient, 3);
-        assert!(delta == DELTA, 3);
+        assert!(delta == get_delta(curve_type), 3);
 
         let supply = coin::supply<LiquidityCoin<CoinType, CollectionType>>();
         let liquidity_coin_supply = option::extract(&mut supply);
