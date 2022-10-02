@@ -464,7 +464,7 @@ module collectibleswap::pool_tests {
         assert!(spot_price == INITIAL_SPOT_PRICE + DELTA + 1, 4);
         assert!(protocol_credit_coin_amount == 3, 4);
         assert!(unrealized_fee == 5, 4);
-        assert!(accumulated_volume == 1015, 4);
+        assert!(accumulated_volume == 1000, 4);
         assert!(accumulated_fees == 15, 4);
 
         balance_before = balance_after;
@@ -500,7 +500,7 @@ module collectibleswap::pool_tests {
         assert!(spot_price == (INITIAL_SPOT_PRICE + DELTA + 1) + DELTA + 3, 4);
         assert!(protocol_credit_coin_amount == 6, 4);
         assert!(unrealized_fee == 0, 4);
-        assert!(accumulated_volume == 2132, 4);
+        assert!(accumulated_volume == 2101, 4);
         assert!(accumulated_fees == 31, 4);
     }
 
@@ -548,9 +548,292 @@ module collectibleswap::pool_tests {
         assert!(reserve_amount == 7200 - INITIAL_SPOT_PRICE + 11, 4);
         assert!(token_count == 9, 4);
         assert!(spot_price == INITIAL_SPOT_PRICE - DELTA + 1, 4);
+        assert!(spot_price == 801, 4);
         assert!(protocol_credit_coin_amount == 2, 4);
         assert!(unrealized_fee == 2, 4);
-        assert!(accumulated_volume == 887, 4);
+        assert!(accumulated_volume == 900, 4);
         assert!(accumulated_fees == 13, 4);
+
+        balance_before = balance_after;
+        // swap
+        pool::swap_tokens_to_coin_script<USDC, CollectionType1>(&coin_admin, get_token_names(10, 11), 0, 0);
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
+
+        (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            _, 
+            _, 
+            token_count, 
+            _, 
+            _,
+            spot_price,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            accumulated_volume,
+            accumulated_fees,
+            unrealized_fee 
+        ) = pool::get_pool_info<USDC, CollectionType1>();
+
+        balance_after = coin::balance<USDC>(@test_coin_admin);
+        assert!(balance_after == balance_before + 789, 4);
+        assert!(reserve_amount == 7200 - INITIAL_SPOT_PRICE + 11 - 801 + 10, 4);
+        assert!(token_count == 10, 4);
+        assert!(spot_price == INITIAL_SPOT_PRICE - DELTA + 1 - DELTA + 1, 4);
+        assert!(protocol_credit_coin_amount == 4, 4);
+        assert!(unrealized_fee == 2, 4);
+        assert!(accumulated_volume == 1701, 4);
+        assert!(accumulated_fees == 25, 4);
+    }
+
+    #[test]
+    fun test_buy_nfts_multi() {
+        let (_, coin_admin, token_creator) = prepare();
+
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
+        
+        let token_names = get_token_names(5, 9);
+        mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
+
+        pool::add_liquidity_script<USDC, CollectionType1>(&coin_admin, 1000000, token_names, 0);
+
+        let balance_before = coin::balance<USDC>(@test_coin_admin);
+        // swap
+        pool::swap_coin_to_any_tokens_script<USDC, CollectionType1>(&coin_admin, 2, 10000);
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
+
+        let (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            _, 
+            _, 
+            token_count, 
+            _, 
+            _,
+            spot_price,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            accumulated_volume,
+            accumulated_fees,
+            unrealized_fee 
+        ) = pool::get_pool_info<USDC, CollectionType1>();
+
+        let balance_after = coin::balance<USDC>(@test_coin_admin);
+        assert!(balance_before == balance_after + 2132, 4);
+        assert!(reserve_amount == (7200 + INITIAL_SPOT_PRICE + DELTA + 12) + (1101 + 13), 4);
+        assert!(token_count == 6, 4);
+        assert!(spot_price == (INITIAL_SPOT_PRICE + DELTA + 1) + DELTA + 3, 4);
+        assert!(protocol_credit_coin_amount == 6, 4);
+        assert!(unrealized_fee == 0, 4);
+        assert!(accumulated_volume == 2101, 4);
+        assert!(accumulated_fees == 31, 4);
+    }
+
+
+    #[test]
+    fun test_sell_nfts_multi() {
+        let (_, coin_admin, token_creator) = prepare();
+
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
+        
+        let token_names = get_token_names(5, 9);
+        mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
+
+        pool::add_liquidity_script<USDC, CollectionType1>(&coin_admin, 1000000, token_names, 0);
+
+        mint_tokens(&token_creator, &coin_admin, b"collection1", get_token_names(9, 11));
+
+        let balance_before = coin::balance<USDC>(@test_coin_admin);
+        // swap
+        pool::swap_tokens_to_coin_script<USDC, CollectionType1>(&coin_admin, get_token_names(9, 11), 0, 0);
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
+
+        let (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            _, 
+            _, 
+            token_count, 
+            _, 
+            _,
+            spot_price,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            accumulated_volume,
+            accumulated_fees,
+            unrealized_fee 
+        ) = pool::get_pool_info<USDC, CollectionType1>();
+
+        let balance_after = coin::balance<USDC>(@test_coin_admin);
+        
+        assert!(balance_after == balance_before + 887 + 789, 4);
+        assert!(reserve_amount == 7200 - INITIAL_SPOT_PRICE + 11 - 801 + 10, 4);
+        assert!(token_count == 10, 4);
+        assert!(spot_price == INITIAL_SPOT_PRICE - DELTA + 1 - DELTA + 1, 4);
+        assert!(protocol_credit_coin_amount == 4, 4);
+        assert!(unrealized_fee == 2, 4);
+        assert!(accumulated_volume == 1701, 4);
+        assert!(accumulated_fees == 25, 4);
+    }
+
+    #[test]
+    fun test_buy_nfts_specific_tokens_1() {
+        let (_, coin_admin, token_creator) = prepare();
+
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
+        
+        let token_names = get_token_names(5, 9);
+        mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
+
+        pool::add_liquidity_script<USDC, CollectionType1>(&coin_admin, 1000000, token_names, 0);
+
+        let balance_before = coin::balance<USDC>(@test_coin_admin);
+        // swap
+        pool::swap_coin_to_specific_tokens_script<USDC, CollectionType1>(&coin_admin, get_token_names(5, 6), 0, 1000000000);
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
+
+        let (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            _, 
+            _, 
+            token_count, 
+            _, 
+            _,
+            spot_price,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            accumulated_volume,
+            accumulated_fees,
+            unrealized_fee 
+        ) = pool::get_pool_info<USDC, CollectionType1>();
+
+        let balance_after = coin::balance<USDC>(@test_coin_admin);
+        assert!(balance_before == balance_after + 1015, 4);
+        assert!(reserve_amount == 7200 + INITIAL_SPOT_PRICE + DELTA + 12, 4);
+        assert!(token_count == 7, 4);
+        assert!(spot_price == INITIAL_SPOT_PRICE + DELTA + 1, 4);
+        assert!(protocol_credit_coin_amount == 3, 4);
+        assert!(unrealized_fee == 5, 4);
+        assert!(accumulated_volume == 1000, 4);
+        assert!(accumulated_fees == 15, 4);
+
+        balance_before = balance_after;
+        // swap
+        pool::swap_coin_to_specific_tokens_script<USDC, CollectionType1>(&coin_admin, get_token_names(6, 7), 0, 1000000000);
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
+
+        (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            _, 
+            _, 
+            token_count, 
+            _, 
+            _,
+            spot_price,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            accumulated_volume,
+            accumulated_fees,
+            unrealized_fee 
+        ) = pool::get_pool_info<USDC, CollectionType1>();
+
+        balance_after = coin::balance<USDC>(@test_coin_admin);
+        assert!(balance_before == balance_after + 1117, 4);
+        assert!(reserve_amount == (7200 + INITIAL_SPOT_PRICE + DELTA + 12) + (1101 + 13), 4);
+        assert!(token_count == 6, 4);
+        assert!(spot_price == (INITIAL_SPOT_PRICE + DELTA + 1) + DELTA + 3, 4);
+        assert!(protocol_credit_coin_amount == 6, 4);
+        assert!(unrealized_fee == 0, 4);
+        assert!(accumulated_volume == 2101, 4);
+        assert!(accumulated_fees == 31, 4);
+    }
+
+    #[test]
+    fun test_buy_nfts_specific_tokens_multi() {
+        let (_, coin_admin, token_creator) = prepare();
+
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
+        
+        let token_names = get_token_names(5, 9);
+        mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
+
+        pool::add_liquidity_script<USDC, CollectionType1>(&coin_admin, 1000000, token_names, 0);
+
+        let balance_before = coin::balance<USDC>(@test_coin_admin);
+        // swap
+        pool::swap_coin_to_specific_tokens_script<USDC, CollectionType1>(&coin_admin, get_token_names(5, 7), 0, 10000000);
+        assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
+
+        let (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            _, 
+            _, 
+            token_count, 
+            _, 
+            _,
+            spot_price,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            accumulated_volume,
+            accumulated_fees,
+            unrealized_fee 
+        ) = pool::get_pool_info<USDC, CollectionType1>();
+
+        let balance_after = coin::balance<USDC>(@test_coin_admin);
+        assert!(balance_before == balance_after + 2132, 4);
+        assert!(reserve_amount == (7200 + INITIAL_SPOT_PRICE + DELTA + 12) + (1101 + 13), 4);
+        assert!(token_count == 6, 4);
+        assert!(spot_price == (INITIAL_SPOT_PRICE + DELTA + 1) + DELTA + 3, 4);
+        assert!(protocol_credit_coin_amount == 6, 4);
+        assert!(unrealized_fee == 0, 4);
+        assert!(accumulated_volume == 2101, 4);
+        assert!(accumulated_fees == 31, 4);
+    }
+
+    #[test]
+    #[expected_failure]
+    fun test_swap_failed_with_invalid_token() {
+        let (_, coin_admin, token_creator) = prepare();
+
+        create_new_pool_success<USDC, CollectionType1>(&coin_admin, &token_creator, b"collection1", CURVE_TYPE, POOL_TYPE);
+        
+        let token_names = get_token_names(5, 9);
+        mint_tokens(&token_creator, &coin_admin, b"collection1", token_names);
+
+        pool::add_liquidity_script<USDC, CollectionType1>(&coin_admin, 1000000, token_names, 0);
+        pool::swap_coin_to_specific_tokens_script<USDC, CollectionType1>(&coin_admin, get_token_names(9, 10), 0, 10000000);
     }
 }

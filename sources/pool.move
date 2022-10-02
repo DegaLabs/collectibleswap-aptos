@@ -594,16 +594,16 @@ module collectibleswap::pool {
         (input_value, token_ids)
     }
 
-    public entry fun swap_coin_to_specific_tokens<CoinType, CollectionCoinType> (
+    public entry fun swap_coin_to_specific_tokens_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     token_names: vector<String>,
                                     property_version: u64,
                                     max_coin_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore
                                      {
-        swap_coin_to_specific<CoinType, CollectionCoinType>(account, &token_names, property_version, max_coin_amount)
+        swap_coin_to_specific_tokens<CoinType, CollectionCoinType>(account, &token_names, property_version, max_coin_amount)
     }
 
-    public fun swap_coin_to_specific<CoinType, CollectionCoinType> (
+    public fun swap_coin_to_specific_tokens<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     token_names: &vector<String>,
                                     property_version: u64,
@@ -820,7 +820,7 @@ module collectibleswap::pool {
         assert!(input_value <= max_coin_amount, INPUT_COIN_EXCEED_COIN_AMOUNT);
         pool.spot_price = new_spot_price;
         pool.delta = new_delta;
-        pool.accumulated_volume = overflow_add(pool.accumulated_volume, (input_value as u128));
+        pool.accumulated_volume = overflow_add(pool.accumulated_volume, ((input_value - trade_fee - protocol_fee) as u128));
         pool.accumulated_fees = overflow_add(pool.accumulated_fees, ((trade_fee + protocol_fee) as u128));
         pool.unrealized_fee = unrealized_fee;
         (protocol_fee, input_value)
@@ -847,7 +847,7 @@ module collectibleswap::pool {
         assert!(output_value >= min_expected_coin_output, INSUFFICIENT_OUTPUT_AMOUNT);
         pool.spot_price = new_spot_price;
         pool.delta = new_delta;
-        pool.accumulated_volume = overflow_add(pool.accumulated_volume, (output_value as u128));
+        pool.accumulated_volume = overflow_add(pool.accumulated_volume, ((output_value + protocol_fee + trade_fee) as u128));
         pool.accumulated_fees = overflow_add(pool.accumulated_fees, ((trade_fee + protocol_fee) as u128));
         pool.unrealized_fee = unrealized_fee;
         (protocol_fee, output_value)
@@ -923,22 +923,34 @@ module collectibleswap::pool {
                     num_items: u64,
                     protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64, u64, u64) {
         assert!(pool.curve_type == CURVE_LINEAR_TYPE || pool.curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
-        let error_code;
-        let new_spot_price;
-        let new_delta;
-        let input_value;
-        let protocol_fee;
-        let trade_fee;
-        if (pool.curve_type == CURVE_LINEAR_TYPE) {
-            (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee) = linear::get_buy_info(pool.spot_price, pool.delta, num_items, pool.fee_for_lp, protocol_fee_multiplier);
-        } else {
-            (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee) = exponential::get_buy_info(pool.spot_price, pool.delta, num_items, pool.fee_for_lp, protocol_fee_multiplier);
-        }; 
-
+        let error_code: u8 = 0;
+        let new_spot_price = pool.spot_price;
+        let new_delta = pool.delta;
+        let input_value: u64 = 0;
+        let sub_input_value;
+        let protocol_fee: u64 = 0;
+        let sub_protocol_fee;
+        let trade_fee: u64 = 0;
+        let sub_trade_fee;
         let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
-        let price_increase = (trade_fee + pool.unrealized_fee) / (current_token_count_in_pool - num_items);
-        let unrealized_fee = (trade_fee + pool.unrealized_fee) - (current_token_count_in_pool - num_items) * price_increase;
-        new_spot_price = new_spot_price + price_increase;
+        let unrealized_fee = pool.unrealized_fee;
+
+        let i = 0;
+        while (i < num_items) {
+            if (pool.curve_type == CURVE_LINEAR_TYPE) {
+                (error_code, new_spot_price, new_delta, sub_input_value, sub_protocol_fee, sub_trade_fee) = linear::get_buy_info(new_spot_price, new_delta, 1, pool.fee_for_lp, protocol_fee_multiplier);
+            } else {
+                (error_code, new_spot_price, new_delta, sub_input_value, sub_protocol_fee, sub_trade_fee) = exponential::get_buy_info(new_spot_price, new_delta, 1, pool.fee_for_lp, protocol_fee_multiplier);
+            }; 
+            trade_fee = trade_fee + sub_trade_fee;
+            protocol_fee = protocol_fee + sub_protocol_fee;
+            input_value = input_value + sub_input_value;
+            let price_increase = (sub_trade_fee + unrealized_fee) / (current_token_count_in_pool - (i + 1));
+            unrealized_fee = (sub_trade_fee + unrealized_fee) - (current_token_count_in_pool - (i + 1)) * price_increase;
+            new_spot_price = new_spot_price + price_increase;
+            i = i + 1;
+        };
+
         (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee, unrealized_fee)
     }
 
@@ -947,23 +959,35 @@ module collectibleswap::pool {
                     num_items: u64,
                     protocol_fee_multiplier: u64): (u8, u64, u64, u64, u64, u64, u64) {
         assert!(pool.curve_type == CURVE_LINEAR_TYPE || pool.curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
-        let error_code;
-        let new_spot_price;
-        let new_delta;
-        let output_value;
-        let protocol_fee;
-        let trade_fee
-        ;
-        if (pool.curve_type == CURVE_LINEAR_TYPE) {
-            (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee) = linear::get_sell_info(pool.spot_price, pool.delta, num_items, pool.fee_for_lp, protocol_fee_multiplier)
-        } else {
-            (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee) = exponential::get_sell_info(pool.spot_price, pool.delta, num_items, pool.fee_for_lp, protocol_fee_multiplier)
-        }; 
+        let error_code: u8 = 0;
+        let new_spot_price = pool.spot_price;
+        let new_delta = pool.delta;
+        let output_value: u64 = 0;
+        let sub_output_value;
+        let protocol_fee: u64 = 0;
+        let sub_protocol_fee;
+        let trade_fee: u64 = 0;
+        let sub_trade_fee;
+        let unrealized_fee = pool.unrealized_fee;
 
         let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
-        let price_increase = (trade_fee + pool.unrealized_fee) / (current_token_count_in_pool + num_items);
-        let unrealized_fee = (trade_fee + pool.unrealized_fee) - (current_token_count_in_pool + num_items) * price_increase;
-        new_spot_price = new_spot_price + price_increase;
+        let i = 0;
+
+        while (i < num_items) {
+            if (pool.curve_type == CURVE_LINEAR_TYPE) {
+                (error_code, new_spot_price, new_delta, sub_output_value, sub_protocol_fee, sub_trade_fee) = linear::get_sell_info(new_spot_price, new_delta, 1, pool.fee_for_lp, protocol_fee_multiplier)
+            } else {
+                (error_code, new_spot_price, new_delta, sub_output_value, sub_protocol_fee, sub_trade_fee) = exponential::get_sell_info(new_spot_price, new_delta, 1, pool.fee_for_lp, protocol_fee_multiplier)
+            }; 
+            trade_fee = trade_fee + sub_trade_fee;
+            protocol_fee = protocol_fee + sub_protocol_fee;
+            output_value = output_value + sub_output_value;
+            let price_increase = (sub_trade_fee + unrealized_fee) / (current_token_count_in_pool + i + 1);
+            unrealized_fee = (sub_trade_fee + unrealized_fee) - (current_token_count_in_pool + (i + 1)) * price_increase;  
+            new_spot_price = new_spot_price + price_increase;
+            i = i + 1;
+        };
+
         (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee, unrealized_fee)
     }
 
