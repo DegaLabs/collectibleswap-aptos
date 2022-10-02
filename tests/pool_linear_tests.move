@@ -1,5 +1,5 @@
 #[test_only]
-module collectibleswap::pool_tests {
+module collectibleswap::pool_linear_tests {
     use std::signer;
     use std::string::utf8;
     use std::string::{Self, String};
