@@ -83,7 +83,7 @@ module collectibleswap::pool {
         pool_type: u8,
         asset_recipient: address,
         delta: u64,
-        fee: u64,
+        fee_for_lp: u64,
         last_price_cumulative: u128,
         last_block_timestamp: u64,
         accumulated_volume: u128,
@@ -110,7 +110,7 @@ module collectibleswap::pool {
         spot_price: u64,
         asset_recipient: address,
         delta: u64,
-        fee: u64,
+        fee_for_lp: u64,
         pool_creator: address,
         timestamp: u64
     }
@@ -238,7 +238,7 @@ module collectibleswap::pool {
             9,
             true,
         );
-        let fee = POOL_FEE_MULTIPLIER;
+        let fee_for_lp = POOL_FEE_MULTIPLIER;
 
         let now_time = get_timestamp();
 
@@ -273,7 +273,7 @@ module collectibleswap::pool {
             pool_type,
             asset_recipient,
             delta,
-            fee,
+            fee_for_lp: fee_for_lp,
             last_price_cumulative: 0,
             last_block_timestamp: now_time,
             accumulated_volume: 0,
@@ -304,7 +304,7 @@ module collectibleswap::pool {
                 spot_price: initial_spot_price,
                 asset_recipient: asset_recipient,
                 delta: delta,
-                fee: fee,
+                fee_for_lp: fee_for_lp,
                 pool_creator: sender,
                 timestamp: now_time
             },
@@ -930,9 +930,9 @@ module collectibleswap::pool {
         let protocol_fee;
         let trade_fee;
         if (pool.curve_type == CURVE_LINEAR_TYPE) {
-            (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee) = linear::get_buy_info(pool.spot_price, pool.delta, num_items, pool.fee, protocol_fee_multiplier);
+            (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee) = linear::get_buy_info(pool.spot_price, pool.delta, num_items, pool.fee_for_lp, protocol_fee_multiplier);
         } else {
-            (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee) = exponential::get_buy_info(pool.spot_price, pool.delta, num_items, pool.fee, protocol_fee_multiplier);
+            (error_code, new_spot_price, new_delta, input_value, protocol_fee, trade_fee) = exponential::get_buy_info(pool.spot_price, pool.delta, num_items, pool.fee_for_lp, protocol_fee_multiplier);
         }; 
 
         let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
@@ -955,9 +955,9 @@ module collectibleswap::pool {
         let trade_fee
         ;
         if (pool.curve_type == CURVE_LINEAR_TYPE) {
-            (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee) = linear::get_sell_info(pool.spot_price, pool.delta, num_items, pool.fee, protocol_fee_multiplier)
+            (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee) = linear::get_sell_info(pool.spot_price, pool.delta, num_items, pool.fee_for_lp, protocol_fee_multiplier)
         } else {
-            (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee) = exponential::get_sell_info(pool.spot_price, pool.delta, num_items, pool.fee, protocol_fee_multiplier)
+            (error_code, new_spot_price, new_delta, output_value, protocol_fee, trade_fee) = exponential::get_sell_info(pool.spot_price, pool.delta, num_items, pool.fee_for_lp, protocol_fee_multiplier)
         }; 
 
         let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
@@ -1020,7 +1020,7 @@ module collectibleswap::pool {
         let pool_type = pool.pool_type;
         let asset_recipient = pool.asset_recipient;
         let delta = pool.delta;
-        let fee = pool.fee;
+        let fee_for_lp = pool.fee_for_lp;
         let last_price_cumulative = pool.last_price_cumulative;
         let last_block_timestamp = pool.last_block_timestamp;
         let accumulated_volume = pool.accumulated_volume;
@@ -1039,7 +1039,7 @@ module collectibleswap::pool {
             pool_type,
             asset_recipient,
             delta,
-            fee,
+            fee_for_lp,
             last_price_cumulative,
             last_block_timestamp,
             accumulated_volume,

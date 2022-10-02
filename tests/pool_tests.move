@@ -467,8 +467,6 @@ module collectibleswap::pool_tests {
         assert!(accumulated_volume == 1015, 4);
         assert!(accumulated_fees == 12, 4);
 
-
-
         balance_before = balance_after;
         // swap
         pool::swap_coin_to_any_tokens_script<USDC, CollectionType1>(&coin_admin, 1, 10000);
