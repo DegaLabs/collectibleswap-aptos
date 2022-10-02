@@ -465,7 +465,7 @@ module collectibleswap::pool_tests {
         assert!(protocol_credit_coin_amount == 3, 4);
         assert!(unrealized_fee == 5, 4);
         assert!(accumulated_volume == 1015, 4);
-        assert!(accumulated_fees == 12, 4);
+        assert!(accumulated_fees == 15, 4);
 
         balance_before = balance_after;
         // swap
@@ -501,7 +501,7 @@ module collectibleswap::pool_tests {
         assert!(protocol_credit_coin_amount == 6, 4);
         assert!(unrealized_fee == 0, 4);
         assert!(accumulated_volume == 2132, 4);
-        assert!(accumulated_fees == 25, 4);
+        assert!(accumulated_fees == 31, 4);
     }
 
     #[test]
@@ -516,8 +516,41 @@ module collectibleswap::pool_tests {
         pool::add_liquidity_script<USDC, CollectionType1>(&coin_admin, 1000000, token_names, 0);
 
         mint_tokens(&token_creator, &coin_admin, b"collection1", get_token_names(9, 11));
+
+        let balance_before = coin::balance<USDC>(@test_coin_admin);
         // swap
-        pool::swap_tokens_to_coin_script<USDC, CollectionType1>(&coin_admin, get_token_names(9, 11), 0, 0);
+        pool::swap_tokens_to_coin_script<USDC, CollectionType1>(&coin_admin, get_token_names(9, 10), 0, 0);
         assert!(pool::check_pool_valid<USDC, CollectionType1>(), 4);
+
+        let (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            _, 
+            _, 
+            token_count, 
+            _, 
+            _,
+            spot_price,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            accumulated_volume,
+            accumulated_fees,
+            unrealized_fee 
+        ) = pool::get_pool_info<USDC, CollectionType1>();
+
+        let balance_after = coin::balance<USDC>(@test_coin_admin);
+        assert!(balance_after == balance_before + 887, 4);
+        assert!(reserve_amount == 7200 - INITIAL_SPOT_PRICE + 11, 4);
+        assert!(token_count == 9, 4);
+        assert!(spot_price == INITIAL_SPOT_PRICE - DELTA + 1, 4);
+        assert!(protocol_credit_coin_amount == 2, 4);
+        assert!(unrealized_fee == 2, 4);
+        assert!(accumulated_volume == 887, 4);
+        assert!(accumulated_fees == 13, 4);
     }
 }

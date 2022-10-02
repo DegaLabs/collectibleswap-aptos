@@ -821,7 +821,7 @@ module collectibleswap::pool {
         pool.spot_price = new_spot_price;
         pool.delta = new_delta;
         pool.accumulated_volume = overflow_add(pool.accumulated_volume, (input_value as u128));
-        pool.accumulated_fees = overflow_add(pool.accumulated_fees, (trade_fee as u128));
+        pool.accumulated_fees = overflow_add(pool.accumulated_fees, ((trade_fee + protocol_fee) as u128));
         pool.unrealized_fee = unrealized_fee;
         (protocol_fee, input_value)
     }
@@ -848,7 +848,7 @@ module collectibleswap::pool {
         pool.spot_price = new_spot_price;
         pool.delta = new_delta;
         pool.accumulated_volume = overflow_add(pool.accumulated_volume, (output_value as u128));
-        pool.accumulated_fees = overflow_add(pool.accumulated_fees, (trade_fee as u128));
+        pool.accumulated_fees = overflow_add(pool.accumulated_fees, ((trade_fee + protocol_fee) as u128));
         pool.unrealized_fee = unrealized_fee;
         (protocol_fee, output_value)
     }
@@ -983,6 +983,14 @@ module collectibleswap::pool {
             i = i + 1;
         };
         true
+    }
+
+    public fun get_required_liquidity<CoinType, CollectionCoinType>(token_count: u64): u64 acquires Pool, PoolAccountCap {
+        let (pool_account_address, _) = get_pool_account_signer();
+        assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
+        let pool = borrow_global<Pool<CoinType, CollectionCoinType>>(pool_account_address);
+        let current_spot_price = pool.spot_price;
+        token_count * current_spot_price
     }
 
     public fun get_pool_info<CoinType, CollectionCoinType>(): 
