@@ -2,9 +2,28 @@
 module test_coin_admin::test_helpers {
     use std::string::utf8;
     use std::signer;
+    use std::vector;
+    use std::string::{Self, String};
 
     use aptos_framework::coin::{Self, Coin, MintCapability, BurnCapability};
     use aptos_framework::account;
+    use collectibleswap::pool;
+
+    use aptos_token::token;
+    use std::option;
+    use collectibleswap::type_registry;
+
+    use liquidity_account::liquidity_coin::LiquidityCoin;
+    use collectibleswap::to_string;
+    use aptos_framework::genesis;
+
+
+    const INITIAL_SPOT_PRICE: u64 = 900;
+    const DELTA: u64 = 100;
+    const FEE: u64 = 125;   //1.25%
+    const PROTOCOL_FEE_MULTIPLIER: u64 = 25;   //0.25%
+    const CURVE_TYPE: u8 = 0;
+    const POOL_TYPE: u8 = 2;
 
     struct BTC {}
 
@@ -164,34 +183,167 @@ module test_coin_admin::test_helpers {
         (coin_admin, lp_owner)
     }
 
-    // public fun setup_coins_and_lp_owner(): (signer, signer) {
-    //     genesis::setup();
+    public fun initialize_token_names(): vector<String> {
+        get_token_names(1, 5)
+    }
 
-    //     let liquidswap_admin = account::create_account_for_test(@liquidswap);
-    //     let lp_coin_metadata = x"064c50436f696e010000000000000000403239383333374145433830334331323945313337414344443138463135393936323344464146453735324143373738443344354437453231454133443142454389021f8b08000000000002ff2d90c16ec3201044ef7c45e44b4eb13160c0957aeab5952af51845d1b22c8995c45860bbfdfce2b4b79dd59b9dd11e27c01b5ce8c44678d0ee75b77fff7c8bc3b8672ba53cc4715bb535aff99eb123789f2867ca27769fce58b83320c6659c0b56f19f36980e21f4beb5207a05c48d54285b4784ad7306a5e8831460add6ce486dc98014aed78e2b521d5525c3d37af034d1e869c48172fd1157fa9afd7d702776199e49d7799ef24bd314795d5c8df1d1c034c77cb883cbff23c64475012a9668dd4c3668a91c7a41caa2ea8db0da7ace3be965274550c1680ed4f615cb8bf343da3c7fa71ea541135279d0774cb7669387fc6c54b15fb48937414101000001076c705f636f696e5c1f8b08000000000002ff35c8b10980301046e13e53fc0338411027b0b0d42a84535048ee82de5521bb6b615ef5f8b2ec960ea412482e0e91488cd5fb1f501dbe1ebd8d14f3329633b24ac63aa0ef36a136d7dc0b3946fd604b00000000000000";
-    //     let lp_coin_code = x"a11ceb0b050000000501000202020a070c170823200a4305000000010003000100010001076c705f636f696e024c500b64756d6d795f6669656c6435e1873b2a1ae8c609598114c527b57d31ff5274f646ea3ff6ecad86c56d2cf8000201020100";
+    public fun get_token_names(from: u64, to: u64): vector<String> {
+        let ret = vector::empty<String>();
+        let i = from;
+        while (i < to) {
+            let token_name = utf8(b"token-");
+            string::append(&mut token_name, to_string::to_string((i as u128)));
+            vector::push_back(&mut ret, token_name);
+            i = i + 1;
+        };
+        ret
+    }
 
-    //     lp_account::initialize_lp_account(
-    //         &liquidswap_admin,
-    //         lp_coin_metadata,
-    //         lp_coin_code
-    //     );
-    //     // retrieves SignerCapability
-    //     liquidity_pool::initialize(&liquidswap_admin);
+    public fun get_lp_supply<CoinType, CollectionType>(): u128 {
+        let supply = coin::supply<LiquidityCoin<USDC, CollectionType1>>();
+        let liquidity_coin_supply = option::extract(&mut supply);
+        liquidity_coin_supply
+    }
 
-    //     let coin_admin = test_coins::create_admin_with_coins();
-    //     let lp_owner = create_lp_owner();
-    //     (coin_admin, lp_owner)
-    // }
+    public fun mint_tokens(token_creator: &signer, recipient: &signer, collection: vector<u8>, token_names: vector<String>) {
+        let collection_name = utf8(collection);
 
-    // public fun mint_liquidity<X, Y, Curve>(lp_owner: &signer, coin_x: Coin<X>, coin_y: Coin<Y>): u64 {
-    //     let lp_owner_addr = signer::address_of(lp_owner);
-    //     let lp_coins = liquidity_pool::mint<X, Y, Curve>(coin_x, coin_y);
-    //     let lp_coins_val = coin::value(&lp_coins);
-    //     if (!coin::is_account_registered<LP<X, Y, Curve>>(lp_owner_addr)) {
-    //         coin::register<LP<X, Y, Curve>>(lp_owner);
-    //     };
-    //     coin::deposit(lp_owner_addr, lp_coins);
-    //     lp_coins_val
-    // }
+        let token_mutate_setting = vector::empty<bool>();
+        vector::push_back<bool>(&mut token_mutate_setting, false);
+        vector::push_back<bool>(&mut token_mutate_setting, false);
+        vector::push_back<bool>(&mut token_mutate_setting, false);
+        vector::push_back<bool>(&mut token_mutate_setting, false);
+        vector::push_back<bool>(&mut token_mutate_setting, false);
+
+        let i = 0;
+        let tokens_count = vector::length(&token_names);
+        while (i < tokens_count) {
+            token::create_token_script(
+                token_creator, 
+                collection_name, 
+                *vector::borrow(&token_names, i), 
+                utf8(b"token description"),
+                1,
+                1,
+                utf8(b"token uri"),
+                signer::address_of(token_creator),
+                2,
+                2,
+                token_mutate_setting,
+                vector::empty(),
+                vector::empty(),
+                vector::empty()
+                );
+            let token_id = token::create_token_id_raw(signer::address_of(token_creator), collection_name, *vector::borrow<String>(&token_names, i), 0);
+            assert!(token::balance_of(signer::address_of(token_creator), token_id) == 1, 2);
+            let token = token::withdraw_token(token_creator, token_id, 1);
+            token::deposit_token(recipient, token);
+            i = i + 1;
+        }
+    }
+
+    public fun initialize_collection_registry(admin: &signer) {
+        type_registry::initialize_script(admin)
+    }
+
+    public fun create_new_pool<CoinType, CollectionType>(coin_admin: &signer, collection: vector<u8>) {
+        pool::create_new_pool_script<USDC, CollectionType1>(
+                    coin_admin, 
+                    utf8(collection), 
+                    initialize_token_names(),
+                    @test_token_creator,
+                    1,
+                    0,
+                    0,
+                    @test_asset_recipient,
+                    DELTA,
+                    0
+        )
+    }
+
+    public fun create_new_pool_success<CoinType, CollectionType>(coin_admin: &signer, token_creator: &signer, collection: vector<u8>, curve_type: u8, pool_type: u8) acquires Capabilities {
+        type_registry::register<CollectionType>(utf8(collection), signer::address_of(token_creator));
+
+        let mutate_setting = vector::empty<bool>();
+        vector::push_back<bool>(&mut mutate_setting, false);
+        vector::push_back<bool>(&mut mutate_setting, false);
+        vector::push_back<bool>(&mut mutate_setting, false);
+
+        token::create_collection_script(token_creator, 
+                                        utf8(collection), 
+                                        utf8(b"description"), 
+                                        utf8(b"uri"), 
+                                        100, 
+                                        mutate_setting);
+
+        mint_tokens(token_creator, coin_admin, collection, initialize_token_names());
+
+        //mint coin USDC
+        mint_to<CoinType>(coin_admin, 200000);
+
+        pool::create_new_pool_script<CoinType, CollectionType>(
+                            coin_admin, 
+                            utf8(collection), 
+                            initialize_token_names(),
+                            @test_token_creator,
+                            INITIAL_SPOT_PRICE,
+                            curve_type,
+                            pool_type,
+                            @test_asset_recipient,
+                            DELTA,
+                            0
+                );
+        let  (
+            reserve_amount, 
+            protocol_credit_coin_amount, 
+            pool_collection, 
+            pool_token_creator, 
+            token_count, 
+            _, 
+            _,
+            spot_price,
+            curve_type,
+            pool_type,
+            asset_recipient,
+            delta,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _ 
+        ) = pool::get_pool_info<CoinType, CollectionType>();
+
+        assert!(reserve_amount == 4 * INITIAL_SPOT_PRICE, 3);
+        assert!(protocol_credit_coin_amount == 0, 3);
+        assert!(pool_collection == utf8(collection), 3);
+        assert!(pool_token_creator == @test_token_creator, 3);
+        assert!(token_count == 4, 3);
+        assert!(spot_price == INITIAL_SPOT_PRICE, 3);
+        assert!(curve_type == curve_type, 3);
+        assert!(pool_type == pool_type, 3);
+
+
+        assert!(pool_token_creator == @test_token_creator, 3);
+        assert!(asset_recipient == @test_asset_recipient, 3);
+        assert!(delta == DELTA, 3);
+
+        let supply = coin::supply<LiquidityCoin<CoinType, CollectionType>>();
+        let liquidity_coin_supply = option::extract(&mut supply);
+        assert!(liquidity_coin_supply == 60, 4);
+        assert!(pool::check_pool_valid<CoinType, CollectionType>(), 4)
+    }
+
+    public fun prepare(): (signer, signer, signer) {
+        genesis::setup();
+        let collectibleswap_admin = create_collectibleswap_admin();
+        let coin_admin = create_admin_with_coins();
+        let token_creator = 
+        
+        create_token_creator();
+
+        pool::initialize_script(&collectibleswap_admin);
+        initialize_collection_registry(&collectibleswap_admin);
+        (collectibleswap_admin, coin_admin, token_creator)
+    }
 }
