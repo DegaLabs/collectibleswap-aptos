@@ -467,11 +467,9 @@ module collectibleswap::pool {
         if (num_nfts_to_withdraw * lp_supply != lp_amount * current_token_count_in_pool) {
             num_nfts_to_withdraw = num_nfts_to_withdraw + 1;
 
-            // TODO: get buy info
-            let new_spot_price = pool.spot_price;
-            value_in_fraction_nft = (num_nfts_to_withdraw - 1) * pool.spot_price + 1 * new_spot_price;
-            assert!(value_in_fraction_nft >= withdrawnable_coin_amount, INTERNAL_ERROR_HANDLING_LIQUIDITY);
-            value_in_fraction_nft = value_in_fraction_nft - withdrawnable_coin_amount;
+            let total_value_in_nfts = (num_nfts_to_withdraw - 1) * pool.spot_price + 1 * pool.spot_price;
+            assert!(total_value_in_nfts >= withdrawnable_coin_amount, INTERNAL_ERROR_HANDLING_LIQUIDITY);
+            value_in_fraction_nft = total_value_in_nfts - withdrawnable_coin_amount;
         };
 
         assert!(withdrawnable_coin_amount >= value_in_fraction_nft, LIQUIDITY_VALUE_TOO_LOW);
