@@ -4,9 +4,9 @@ version = "0.1.0"
 license = "MIT"
 
 [addresses]
-collectibleswap ="0x43417434fd869edee76cca2a4d2301e528a1551b1d719b75c350c3c97d15b8b9"
+collectibleswap ="0x0831c065f08f654d912a39f5cd0ee6bb5288d902c3d8fbfcc61021106fa12e22"
 emergency_admin ="0x0831c065f08f654d912a39f5cd0ee6bb5288d902c3d8fbfcc61021106fa12e22"
-liquidity_account="0x385068db10693e06512ed54b1e6e8f1fb9945bb7a78c28a45585939ce953f99e"
+liquidity_account="0xe4333845fd36cb82ed7ab2f95c0276368aa3f8fa5b53346c8d891effb6d97fe2"
 
 # Addresses for tests.
 test_coin_admin = "0x11"
