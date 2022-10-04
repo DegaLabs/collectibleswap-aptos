@@ -2,11 +2,11 @@ module collectibleswap::exponential {
     use collectibleswap::u256:: {Self, U256};
     const FEE_DIVISOR: u64 = 10000;
     const MIN_PRICE: u64 = 1;
-    public entry fun validate_delta(delta: u64): bool {
+    public fun validate_delta(delta: u64): bool {
         delta >= FEE_DIVISOR        
     }
 
-    public entry fun validate_spot_price(_new_spot_price: u64): bool {
+    public fun validate_spot_price(_new_spot_price: u64): bool {
         _new_spot_price > MIN_PRICE
     }
 
@@ -30,7 +30,7 @@ module collectibleswap::exponential {
         z
     }
 
-    public entry fun get_buy_info(
+    public fun get_buy_info(
                     spot_price: u64,
                     delta: u64,
                     num_items: u64,
@@ -58,7 +58,7 @@ module collectibleswap::exponential {
         return (0, new_spot_price, new_delta, input_value, protocol_fee, trade_fee)
     }
 
-     public entry fun get_sell_info(
+     public fun get_sell_info(
                     spot_price: u64,
                     delta: u64,
                     num_items_sell: u64,

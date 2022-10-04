@@ -1,16 +1,16 @@
 module collectibleswap::linear {
     const FEE_DIVISOR: u64 = 10000;
-    public entry fun validate_delta(_delta: u64): bool {
+    public fun validate_delta(_delta: u64): bool {
         //all valids for linear curve
         true
     }
 
-    public entry fun validate_spot_price(_new_spot_price: u64): bool {
+    public fun validate_spot_price(_new_spot_price: u64): bool {
         //all valids for linear curve
         true
     }
 
-    public entry fun get_buy_info(
+    public fun get_buy_info(
                     spot_price: u64,
                     delta: u64,
                     num_items: u64,
@@ -34,7 +34,7 @@ module collectibleswap::linear {
         return (0, new_spot_price, new_delta, input_value, protocol_fee, trade_fee)
     }
 
-     public entry fun get_sell_info(
+     public fun get_sell_info(
                     spot_price: u64,
                     delta: u64,
                     num_items_sell: u64,

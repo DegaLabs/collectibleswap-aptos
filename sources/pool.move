@@ -246,8 +246,12 @@ module collectibleswap::pool {
 
         // compute coin amount
         let initial_coin_amount = vector::length(token_names) * initial_spot_price;
-        let c = coin::withdraw<CoinType>(account, initial_coin_amount);
-
+        let c;
+        if (pool_type != POOL_TYPE_TOKEN) {
+            c = coin::withdraw<CoinType>(account, initial_coin_amount);
+        } else {
+            c = coin::zero<CoinType>();
+        };
         let liquidity = math::sqrt(initial_coin_amount);
         let liquidity_coin = coin::mint<LiquidityCoin<CoinType, CollectionCoinType>>(liquidity, &mint_capability);
         let sender = signer::address_of(account);
@@ -436,12 +440,12 @@ module collectibleswap::pool {
         liquidity
     }
 
-    public entry fun add_liquidity_script<CoinType, CollectionCoinType> (
+    public fun add_liquidity_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     max_coin_amount: u64,
                                     token_names: vector<String>,
-                                    property_version: u64): u64 acquires Pool, PoolAccountCap, EventsStore {
-        add_liquidity<CoinType, CollectionCoinType>(account, max_coin_amount, &token_names, property_version)
+                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore {
+        add_liquidity<CoinType, CollectionCoinType>(account, max_coin_amount, &token_names, property_version);
     }
 
     public fun remove_liquidity<CoinType, CollectionCoinType> (
@@ -533,11 +537,11 @@ module collectibleswap::pool {
         remove_liquidity<CoinType, CollectionCoinType>(account, min_coin_amount, min_nfts, lp_amount)
     }
 
-    public entry fun swap_coin_to_any_tokens_script<CoinType, CollectionCoinType> (
+    public fun swap_coin_to_any_tokens_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     num_nfts: u64,
-                                    max_coin_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore {
-        swap_coin_to_any_tokens<CoinType, CollectionCoinType>(account, num_nfts, max_coin_amount)
+                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
+        swap_coin_to_any_tokens<CoinType, CollectionCoinType>(account, num_nfts, max_coin_amount);
     }
 
     public fun swap_coin_to_any_tokens<CoinType, CollectionCoinType> (
@@ -608,9 +612,9 @@ module collectibleswap::pool {
                                     account: &signer,
                                     token_names: vector<String>,
                                     property_version: u64,
-                                    max_coin_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore
+                                    max_coin_amount: u64) acquires Pool, PoolAccountCap, EventsStore
                                      {
-        swap_coin_to_specific_tokens<CoinType, CollectionCoinType>(account, &token_names, property_version, max_coin_amount)
+        swap_coin_to_specific_tokens<CoinType, CollectionCoinType>(account, &token_names, property_version, max_coin_amount);
     }
 
     public fun swap_coin_to_specific_tokens<CoinType, CollectionCoinType> (
@@ -695,8 +699,8 @@ module collectibleswap::pool {
                                     account: &signer,
                                     token_names: vector<String>,
                                     min_coin_output: u64,
-                                    property_version: u64): u64 acquires Pool, PoolAccountCap, EventsStore {
-        swap_tokens_to_coin<CoinType, CollectionCoinType>(account, &token_names, min_coin_output, property_version)
+                                    property_version: u64) acquires Pool, PoolAccountCap, EventsStore {
+        swap_tokens_to_coin<CoinType, CollectionCoinType>(account, &token_names, min_coin_output, property_version);
     }
 
     public fun swap_tokens_to_coin<CoinType, CollectionCoinType> (
@@ -785,7 +789,7 @@ module collectibleswap::pool {
         output_amount
     }
 
-    public entry fun claim_tokens_script<CoinType, CollectionCoinType>(account: &signer): vector<token::TokenId> acquires Pool, PoolAccountCap, EventsStore {
+    public entry fun claim_tokens_script<CoinType, CollectionCoinType>(account: &signer) acquires Pool, PoolAccountCap, EventsStore {
         let i = 0; 
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
@@ -816,7 +820,6 @@ module collectibleswap::pool {
                 timestamp: get_timestamp()
             }
         );
-        token_ids
     }
 
 

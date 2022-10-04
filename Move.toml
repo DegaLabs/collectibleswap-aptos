@@ -2,6 +2,7 @@
 name = "collectibleswap"
 version = "0.1.0"
 license = "MIT"
+upgrade_policy = "compatible"
 
 [addresses]
 collectibleswap ="0x0831c065f08f654d912a39f5cd0ee6bb5288d902c3d8fbfcc61021106fa12e22"
@@ -16,9 +17,9 @@ test_token_creator = "0x14"
 test_asset_recipient = "0x15"
 
 [dependencies]
-AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-framework/", rev="aptos-cli-v0.3.5" }
-AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-stdlib/", rev="aptos-cli-v0.3.5" }
-AptosToken = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-token/", rev="aptos-cli-v0.3.5" }
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-framework/", rev="aptos-cli-v0.3.7" }
+AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-stdlib/", rev="aptos-cli-v0.3.7" }
+AptosToken = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-token/", rev="aptos-cli-v0.3.7" }
 
 [dependencies.CollectibleSwapLP]
 local = "./liquidity_coin/"
