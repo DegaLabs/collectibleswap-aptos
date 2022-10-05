@@ -10,7 +10,7 @@ module collectibleswap::pool {
     use aptos_framework::account::SignerCapability;
     use aptos_framework::coin::{Self, Coin, BurnCapability, MintCapability, FreezeCapability};
     use aptos_std::event;    
-    use std::table_with_length::{Self, TableWithLength};
+    use collectibleswap::iterable_table::{Self, IterableTable};
     use aptos_token::token;
     use std::option;
     use collectibleswap::math;
@@ -73,10 +73,8 @@ module collectibleswap::pool {
         collection: String,
         token_creator: address,
         collection_type: type_info::TypeInfo,
-        tokens: TableWithLength<token::TokenId, token::Token>,
-        token_ids_list: vector<token::TokenId>,
-        tokens_for_asset_recipient: TableWithLength<token::TokenId, token::Token>,
-        token_ids_list_asset_recipient: vector<token::TokenId>,
+        tokens: IterableTable<token::TokenId, token::Token>,
+        tokens_for_asset_recipient: IterableTable<token::TokenId, token::Token>,
         mint_capability: MintCapability<LiquidityCoin<CoinType, CollectionCoinType>>,
         freeze_capability: FreezeCapability<LiquidityCoin<CoinType, CollectionCoinType>>,
         burn_capability: BurnCapability<LiquidityCoin<CoinType, CollectionCoinType>>,
@@ -267,10 +265,8 @@ module collectibleswap::pool {
             collection,
             token_creator,
             collection_type: type_info::type_of<CollectionCoinType>(),
-            tokens: table_with_length::new(),
-            token_ids_list: vector::empty(),
-            tokens_for_asset_recipient: table_with_length::new(),
-            token_ids_list_asset_recipient: vector::empty(),
+            tokens: iterable_table::new(),
+            tokens_for_asset_recipient: iterable_table::new(),
             mint_capability,
             freeze_capability,
             burn_capability,
@@ -358,11 +354,10 @@ module collectibleswap::pool {
             let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
             let token = token::withdraw_token(account, token_id, 1);
             vector::push_back<token::TokenId>(&mut token_ids, token_id);
-            if (!table_with_length::contains(&pool.tokens, token_id)) {
-                vector::push_back(&mut pool.token_ids_list, token_id);
-                table_with_length::add(&mut pool.tokens, token_id, token);
+            if (!iterable_table::contains(&pool.tokens, token_id)) {
+                iterable_table::add(&mut pool.tokens, token_id, token);
             } else {
-                let recipient_token = table_with_length::borrow_mut(&mut pool.tokens, token_id);
+                let recipient_token = iterable_table::borrow_mut(&mut pool.tokens, token_id);
                 token::merge(recipient_token, token);
             };
             
@@ -409,7 +404,7 @@ module collectibleswap::pool {
         let c = coin::withdraw<CoinType>(account, coin_amount);
         coin::merge(&mut pool.reserve, c);
 
-        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        let current_token_count_in_pool = iterable_table::length<token::TokenId, token::Token>(&pool.tokens);
         let current_liquid_supply = option::extract<u128>(&mut coin::supply<LiquidityCoin<CoinType, CollectionCoinType>>());
 
         let liquidity = (current_liquid_supply as u64) * added_token_count / current_token_count_in_pool;
@@ -467,7 +462,7 @@ module collectibleswap::pool {
         let lp_coin = coin::withdraw<LiquidityCoin<CoinType, CollectionCoinType>>(account, lp_amount);
         let lp_supply_option = coin::supply<LiquidityCoin<CoinType, CollectionCoinType>>();
         let lp_supply = (option::extract<u128>(&mut lp_supply_option) as u64);
-        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        let current_token_count_in_pool = iterable_table::length<token::TokenId, token::Token>(&pool.tokens);
         let withdrawnable_coin_u256 = u256::mul(
                         u256::mul(u256::from_u64((current_token_count_in_pool as u64)), u256::from_u64(pool.spot_price)),
                         u256::from_u64(lp_amount)
@@ -497,9 +492,9 @@ module collectibleswap::pool {
         let i = 0; 
         let token_ids = vector::empty<token::TokenId>();
         while (i < num_nfts_to_withdraw) {
-            let token_id = *vector::borrow(&pool.token_ids_list, 0);
+            let token_id = *option::borrow(&iterable_table::head_key(&pool.tokens));
             vector::push_back<token::TokenId>(&mut token_ids, token_id);
-            let token = remove_token_from_pool(&mut pool.tokens, &mut pool.token_ids_list, &token_id);
+            let token = remove_token_from_pool(&mut pool.tokens, &token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
@@ -561,7 +556,7 @@ module collectibleswap::pool {
 
         assert!(pool.pool_type == POOL_TYPE_TOKEN || pool.pool_type == POOL_TYPE_TRADING, WRONG_POOL_TYPE);
 
-        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        let current_token_count_in_pool = iterable_table::length<token::TokenId, token::Token>(&pool.tokens);
         assert!(num_nfts <= current_token_count_in_pool, NOT_ENOUGH_NFT_IN_POOL);
 
         let (protocol_fee, input_value) = update_buy_info<CoinType, CollectionCoinType>(pool, num_nfts, max_coin_amount, PROTOCOL_FEE_MULTIPLIER);
@@ -570,9 +565,9 @@ module collectibleswap::pool {
         let i = 0; 
         let token_ids = vector::empty<token::TokenId>();
         while (i < num_nfts) {
-            let token_id = *vector::borrow(&mut pool.token_ids_list, 0);
+            let token_id = *option::borrow(&iterable_table::head_key(&pool.tokens));
             vector::push_back<token::TokenId>(&mut token_ids, token_id);
-            let token = remove_token_from_pool(&mut pool.tokens, &mut pool.token_ids_list, &token_id);
+            let token = remove_token_from_pool(&mut pool.tokens, &token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
@@ -636,7 +631,7 @@ module collectibleswap::pool {
 
         assert!(pool.pool_type == POOL_TYPE_TOKEN || pool.pool_type == POOL_TYPE_TRADING, WRONG_POOL_TYPE);
 
-        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        let current_token_count_in_pool = iterable_table::length<token::TokenId, token::Token>(&pool.tokens);
         assert!(num_nfts <= current_token_count_in_pool, NOT_ENOUGH_NFT_IN_POOL);
 
         let (protocol_fee, input_value) = update_buy_info<CoinType, CollectionCoinType>(pool, num_nfts, max_coin_amount, PROTOCOL_FEE_MULTIPLIER);
@@ -647,7 +642,7 @@ module collectibleswap::pool {
         while (i < num_nfts) {
             let token_id = token::create_token_id_raw(token_creator, collection, *vector::borrow<String>(token_names, i), property_version);
             vector::push_back<token::TokenId>(&mut token_ids, token_id);
-            let token = remove_token_from_pool(&mut pool.tokens, &mut pool.token_ids_list, &token_id);
+            let token = remove_token_from_pool(&mut pool.tokens, &token_id);
             token::deposit_token(account, token);
             i = i + 1;
         };
@@ -682,16 +677,15 @@ module collectibleswap::pool {
         (input_value, token_ids)
     }
 
-    fun remove_token_from_pool(tokens: &mut TableWithLength<token::TokenId, token::Token>, token_ids_list: &mut vector<token::TokenId>, token_id: &token::TokenId): token::Token {
-        let t = table_with_length::borrow(tokens, *token_id);
+    fun remove_token_from_pool(tokens: &mut IterableTable<token::TokenId, token::Token>, token_id: &token::TokenId): token::Token {
+        let t = iterable_table::borrow(tokens, *token_id);
         let token_amount = token::get_token_amount(t);
         if (token_amount > 1) {
-            let token = table_with_length::borrow_mut(tokens, *token_id);
+            let token = iterable_table::borrow_mut(tokens, *token_id);
             let created_token = token::split(token, 1);
             return created_token
         } else {
-            remove_token_id_from_pool_list(token_ids_list, *token_id);
-            table_with_length::remove(tokens, *token_id)
+            iterable_table::remove(tokens, *token_id)
         }
     }
 
@@ -763,11 +757,10 @@ module collectibleswap::pool {
 
                 let token = token::withdraw_token(account, token_id, 1);
                 //deposit token for asset recipients to claim
-                if (!table_with_length::contains(&pool.tokens_for_asset_recipient, token_id)) {
-                    table_with_length::add<token::TokenId, token::Token>(&mut pool.tokens_for_asset_recipient, token_id, token);
-                    vector::push_back<token::TokenId>(&mut pool.token_ids_list_asset_recipient, token_id);
+                if (!iterable_table::contains(&pool.tokens_for_asset_recipient, token_id)) {
+                    iterable_table::add<token::TokenId, token::Token>(&mut pool.tokens_for_asset_recipient, token_id, token);
                 } else {
-                    let recipient_token = table_with_length::borrow_mut(&mut pool.tokens_for_asset_recipient, token_id);
+                    let recipient_token = iterable_table::borrow_mut(&mut pool.tokens_for_asset_recipient, token_id);
                     token::merge(recipient_token, token);
                 };
                 i = i + 1;
@@ -790,7 +783,6 @@ module collectibleswap::pool {
     }
 
     public entry fun claim_tokens_script<CoinType, CollectionCoinType>(account: &signer) acquires Pool, PoolAccountCap, EventsStore {
-        let i = 0; 
         assert_no_emergency();
         let (pool_account_address, _) = get_pool_account_signer();
         assert!(exists<Pool<CoinType, CollectionCoinType>>(pool_account_address), PAIR_NOT_EXISTS); 
@@ -799,14 +791,15 @@ module collectibleswap::pool {
         let collection = pool.collection;
         let token_creator = pool.token_creator;
         assert_valid_cointype<CollectionCoinType>(collection, token_creator);
-        let num_nfts = vector::length(&pool.token_ids_list_asset_recipient);
         let token_ids = vector::empty<token::TokenId>();
-        while (i < num_nfts) {
-            let token_id = vector::pop_back(&mut pool.token_ids_list_asset_recipient);
-            vector::push_back<token::TokenId>(&mut token_ids, token_id);
-            let token = table_with_length::remove<token::TokenId, token::Token>(&mut pool.tokens_for_asset_recipient, token_id);
+
+        let key = iterable_table::tail_key(&pool.tokens_for_asset_recipient);
+        while (option::is_some(&key)) {
+            let (token, prev, _) = iterable_table::remove_iter(&mut pool.tokens_for_asset_recipient, *option::borrow(&key));
+            let token_id = *option::borrow(&key);
+            vector::push_back(&mut token_ids, token_id);
             token::deposit_token(account, token);
-            i = i + 1;
+            key = prev;
         };
 
         let events_store = borrow_global_mut<EventsStore<CoinType, CollectionCoinType>>(pool_account_address);
@@ -945,7 +938,7 @@ module collectibleswap::pool {
         let sub_protocol_fee;
         let trade_fee: u64 = 0;
         let sub_trade_fee;
-        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        let current_token_count_in_pool = iterable_table::length<token::TokenId, token::Token>(&pool.tokens);
         let unrealized_fee = pool.unrealized_fee;
 
         let i = 0;
@@ -983,7 +976,7 @@ module collectibleswap::pool {
         let sub_trade_fee;
         let unrealized_fee = pool.unrealized_fee;
 
-        let current_token_count_in_pool = table_with_length::length<token::TokenId, token::Token>(&pool.tokens);
+        let current_token_count_in_pool = iterable_table::length<token::TokenId, token::Token>(&pool.tokens);
         let i = 0;
 
         while (i < num_items) {
@@ -1007,14 +1000,15 @@ module collectibleswap::pool {
     public fun check_pool_valid<CoinType, CollectionCoinType>(): bool acquires Pool, PoolAccountCap {
         let (pool_account_address, _) = get_pool_account_signer();
         let pool = borrow_global<Pool<CoinType, CollectionCoinType>>(pool_account_address);
-        if (vector::length(&pool.token_ids_list) != table_with_length::length(&pool.tokens)) {
+        let token_ids_list = iterable_table::get_keys(&pool.tokens);
+        if (vector::length(&token_ids_list) != iterable_table::length(&pool.tokens)) {
             return false
         };
         let i = 0;
-        let count = vector::length(&pool.token_ids_list);
+        let count = vector::length(&token_ids_list);
         while (i < count) {
-            let token_id = *vector::borrow(&pool.token_ids_list, i);
-            if(!table_with_length::contains(&pool.tokens, token_id)) {
+            let token_id = *vector::borrow(&token_ids_list, i);
+            if(!iterable_table::contains(&pool.tokens, token_id)) {
                 return false
             };
             i = i + 1;
@@ -1057,9 +1051,9 @@ module collectibleswap::pool {
         let protocol_credit_coin_amount = coin::value(&pool.protocol_credit_coin);
         let collection = pool.collection;
         let token_creator = pool.token_creator;
-        let token_count = vector::length(&pool.token_ids_list);
-        let token_ids_list = pool.token_ids_list;
-        let token_ids_list_asset_recipient = pool.token_ids_list_asset_recipient;
+        let token_count = iterable_table::length(&pool.tokens);
+        let token_ids_list = iterable_table::get_keys(&pool.tokens);
+        let token_ids_list_asset_recipient = iterable_table::get_keys(&pool.tokens_for_asset_recipient);
         let spot_price = pool.spot_price;
         let curve_type = pool.curve_type;
         let pool_type = pool.pool_type;
