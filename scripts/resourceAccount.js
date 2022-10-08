@@ -38,7 +38,7 @@ let senderSerialized = aptos.BCS.bcsToBytes(aptos.TxnBuilderTypes.AccountAddress
 console.log('senderSerialized', Buffer.from(senderSerialized).toString('hex'))
 let seedSerialized = toUTF8Array(seed)
 console.log('seedSerialized', Buffer.from(seedSerialized).toString('hex'))
-let joined = [...senderSerialized, ...seedSerialized]
+let joined = [...senderSerialized, ...seedSerialized, ...[255]]
 
 const hash = new SHA3(256);
 
