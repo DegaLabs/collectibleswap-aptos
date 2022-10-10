@@ -8,6 +8,7 @@ module test_coin_admin::test_helpers {
     use aptos_framework::coin::{Self, Coin, MintCapability, BurnCapability};
     use aptos_framework::account;
     use collectibleswap::pool;
+    use collectibleswap::collectibleswap_lp_account;
 
     use aptos_token::token;
     use std::option;
@@ -22,6 +23,9 @@ module test_coin_admin::test_helpers {
     const DELTA_EXPONENTIAL: u64 = 11000;
     const CURVE_TYPE: u8 = 0;
     const POOL_TYPE: u8 = 2;
+
+    const PACKAGE_METADATA: vector<u8> = x"11436f6c6c65637469626c65537761704c50010000000000000000403637434245374246353938414532313634373741454232303644394639453833384630423739384131393146453946424435313337464346364241373731384482021f8b08000000000002ff358fbd6ac3301485773d85f1e2a591a5d88e934286d2b54321630845baba4a4464cb9564a7a5f4dd23e7e74ef7703ef838fb41c0591cf1407ad161b6cd8a77672d4234d2e2ee22868fcf824ce88371fddc72ca282b08d90ba53c8680e140acf91e8d32f1f74b00b8b18f09ccd98fd24233ddd6cb5a343536ab5a4355b5ad5aa36c39c36a03b2596b0d7cc9f96ac3a402c6643ac141571c799e2c0a07ec15f66066d1db105dd845658d4c8abfec686eaa538c43782dcb144fa3a4e0ba52cce4c20a191e2f388f3401f94b1646a98cdfe6f7a2731396daa7f117e7cf0f3adc1c65823d4e4f12ac594c8c56b4cdb37f7205acc25e1a39010000010e6c69717569646974795f636f696eb3011f8b08000000000002ff5d4ebb0ec2300cdcf98afb00103b422c5d19d9519ab86aa4d40ea903aaaafe3ba12854c2db9def3588cb8110fc237be775ba1b6b25b39e4e1b65c533e61dca1d8f88220136915149187bc9c17d21c1207371111a0981ac7ae1a6786f53247445ad3df904fb7bee0be34774995758d35a424cf2f48e1c846b6fb5b581c69789e892b01e88dd2a183565abb8d6d19fde73ec0dab0ca823f6d898ff8117cccb6e7903605b00180f01000000000200000000000000000000000000000000000000000000000000000000000000010b4170746f735374646c696200000000000000000000000000000000000000000000000000000000000000010a4d6f76655374646c696200";
+    const MODULE_CODE: vector<u8> = x"a11ceb0b0500000005010002020208070a290833200a5305000000010002000100010e6c69717569646974795f636f696e0d4c6971756964697479436f696e0b64756d6d795f6669656c64dfaf0f7424a54e564fc3377d8eb710e39cb58ffc1211690bdc00bbbba1cf31e1000201020100ap";
 
     struct BTC {}
 
@@ -347,8 +351,13 @@ module test_coin_admin::test_helpers {
         
         create_token_creator();
 
+        call_initialize_lp_account(&collectibleswap_admin);
         pool::initialize_script(&collectibleswap_admin);
         initialize_collection_registry(&collectibleswap_admin);
         (collectibleswap_admin, coin_admin, token_creator)
+    }
+
+    public fun call_initialize_lp_account(collectibleswap_admin: &signer) {
+        collectibleswap_lp_account::initialize_lp_account(collectibleswap_admin, PACKAGE_METADATA, MODULE_CODE);
     }
 }

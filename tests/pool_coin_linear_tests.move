@@ -19,6 +19,8 @@ module collectibleswap::pool_coin_linear_tests {
         let coin_admin = test_helpers::create_admin_with_coins();
         let token_creator = test_helpers::create_token_creator();
 
+        test_helpers::call_initialize_lp_account(&collectibleswap_admin);
+
         pool::initialize_script(&collectibleswap_admin);
         test_helpers::initialize_collection_registry(&collectibleswap_admin);
         (collectibleswap_admin, coin_admin, token_creator)
@@ -34,6 +36,8 @@ module collectibleswap::pool_coin_linear_tests {
     #[expected_failure(abort_code = 1018)]
     fun test_cannot_reinitialize_contract() {
         let collectibleswap_admin = test_helpers::create_collectibleswap_admin();
+
+        test_helpers::call_initialize_lp_account(&collectibleswap_admin);
         pool::initialize_script(&collectibleswap_admin);
         pool::initialize_script(&collectibleswap_admin);
     }
@@ -41,6 +45,8 @@ module collectibleswap::pool_coin_linear_tests {
     #[test]
     fun test_pool_cap_exist() {
         let collectibleswap_admin = test_helpers::create_collectibleswap_admin();
+
+        test_helpers::call_initialize_lp_account(&collectibleswap_admin);
         pool::initialize_script(&collectibleswap_admin);
         assert!(pool::is_pool_cap_initialized(), 1);
         assert!(pool::get_pool_resource_account_address() == @liquidity_account, 2);
@@ -50,6 +56,8 @@ module collectibleswap::pool_coin_linear_tests {
     #[expected_failure(abort_code = 3005)]
     fun test_create_new_pool_not_register_collection_type() {
         let collectibleswap_admin = test_helpers::create_collectibleswap_admin();
+
+        test_helpers::call_initialize_lp_account(&collectibleswap_admin);
         pool::initialize_script(&collectibleswap_admin);
         let coin_admin = test_helpers::create_admin_with_coins();
         assert!(signer::address_of(&coin_admin) == @test_coin_admin, 1);

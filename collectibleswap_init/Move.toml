@@ -1,0 +1,12 @@
+[package]
+name = 'CollectibleSwapInit'
+version = '0.1.0'
+upgrade_policy = 'compatible'
+
+[addresses]
+collectibleswap = "0x4da5a5e0dee5c0372b73b9863541bc5b475b0f8ebfd853772bc9c529967b782a"
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "aptos-cli-v0.3.7"
+subdir = "aptos-move/framework/aptos-framework"

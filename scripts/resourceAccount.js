@@ -32,13 +32,14 @@ function toUTF8Array(str) {
     return utf8;
 }
 
-let sender = "0x0831c065f08f654d912a39f5cd0ee6bb5288d902c3d8fbfcc61021106fa12e22"
+let sender = "0x4da5a5e0dee5c0372b73b9863541bc5b475b0f8ebfd853772bc9c529967b782a"
 let seed = "collectibleswap_resource_account_seed"
 let senderSerialized = aptos.BCS.bcsToBytes(aptos.TxnBuilderTypes.AccountAddress.fromHex(sender))
 console.log('senderSerialized', Buffer.from(senderSerialized).toString('hex'))
 let seedSerialized = toUTF8Array(seed)
 console.log('seedSerialized', Buffer.from(seedSerialized).toString('hex'))
-let joined = [...senderSerialized, ...seedSerialized, ...[255]]
+let joined = [...senderSerialized, ...seedSerialized]
+    ]
 
 const hash = new SHA3(256);
 

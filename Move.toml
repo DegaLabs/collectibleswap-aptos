@@ -1,13 +1,13 @@
 [package]
-name = "collectibleswap"
+name = "collectibleswap-0.1.0"
 version = "0.1.0"
 license = "MIT"
 upgrade_policy = "compatible"
 
 [addresses]
-collectibleswap ="0x0831c065f08f654d912a39f5cd0ee6bb5288d902c3d8fbfcc61021106fa12e22"
-emergency_admin ="0x0831c065f08f654d912a39f5cd0ee6bb5288d902c3d8fbfcc61021106fa12e22"
-liquidity_account="0x60c41ec970fe1efec0aae3a0774137d95675049c7928a4483d50454a107319eb"
+collectibleswap ="0x4da5a5e0dee5c0372b73b9863541bc5b475b0f8ebfd853772bc9c529967b782a"
+emergency_admin ="0x4da5a5e0dee5c0372b73b9863541bc5b475b0f8ebfd853772bc9c529967b782a"
+liquidity_account="0xdfaf0f7424a54e564fc3377d8eb710e39cb58ffc1211690bdc00bbbba1cf31e1"
 
 # Addresses for tests.
 test_coin_admin = "0x11"
@@ -17,10 +17,13 @@ test_token_creator = "0x14"
 test_asset_recipient = "0x15"
 
 [dependencies]
-AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-framework/", rev="aptos-cli-v0.3.9" }
-AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-stdlib/", rev="aptos-cli-v0.3.9" }
-AptosToken = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-token/", rev="aptos-cli-v0.3.9" }
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-framework/", rev="aptos-cli-v0.3.7" }
+AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-stdlib/", rev="aptos-cli-v0.3.7" }
+AptosToken = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-token/", rev="aptos-cli-v0.3.7" }
 
 [dependencies.CollectibleSwapLP]
 local = "./liquidity_coin/"
+
+[dependencies.CollectibleSwapInit]
+local = "./collectibleswap_init/"
 

@@ -3,7 +3,7 @@ name = 'CollectibleSwapLP'
 version = '1.0.0'
 
 [addresses]
-liquidity_account = "0x60c41ec970fe1efec0aae3a0774137d95675049c7928a4483d50454a107319eb"
+liquidity_account = "0xdfaf0f7424a54e564fc3377d8eb710e39cb58ffc1211690bdc00bbbba1cf31e1"
 
 [dependencies]
-AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-stdlib/", rev="aptos-cli-v0.3.5" }
+AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir="aptos-move/framework/aptos-stdlib/", rev="aptos-cli-v0.3.7" }
