@@ -28,16 +28,6 @@ const {
     
     const alice = new AptosAccount(Uint8Array.from(key_buffer))
     console.log("alice", alice.address());
-    // Creates Alice's account and mint 5000 test coins
-    // await faucetClient.fundAccount(alice.address(), 5000);
-  
-    let resources = await client.getAccountResources(alice.address());
-    let accountResource = resources.find(
-      (r) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
-    );
-    console.log(
-      `Alice coins: ${accountResource.data.coin.value}`
-    );
     
     packageMetadata = packageMetadata.toString('hex')
     packageMetadata = Uint8Array.from(Buffer.from(packageMetadata, "hex"))
@@ -48,7 +38,7 @@ const {
       new TxnBuilderTypes.TransactionPayloadEntryFunction(
         TxnBuilderTypes.EntryFunction.natural(
           // Fully qualified module name, `AccountAddress::ModuleName`
-          `${alice.address()}::pool`,
+          `${alice.address()}::type_registry`,
           // Module function
           "initialize_script",
           // The coin type to transfer

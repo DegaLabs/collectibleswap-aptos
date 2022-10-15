@@ -6,8 +6,10 @@ const {
     BCS,
     TxnBuilderTypes,
   } = Aptos;
-  const getKey = require('./getKey')
+  const getMnemonics = require('./getMnemonics')
   
+  let AptosWeb3 = require('@martiandao/aptos-web3.js')
+
   // devnet is used here for testing
   const NODE_URL = "https://fullnode.devnet.aptoslabs.com";
   const FAUCET_URL = "https://faucet.devnet.aptoslabs.com";
@@ -17,44 +19,54 @@ const {
   
   let fs = require('fs')
   let path = require('path')
-  let modulePath = "./liquidity_coin"
-  let packageMetadata = fs.readFileSync(path.join(modulePath, "build", "CollectibleSwapLP", "package-metadata.bcs"));
-  let moduleCode = fs.readFileSync(path.join(modulePath, "build", "CollectibleSwapLP", "bytecode_modules", "liquidity_coin.mv"));
 
+  let collectionName = "CloneX"
+  let collectionDescription = "Faucet " + collectionName
+  let collectionURL = "Fake URL " + collectionName
   async function main() {
     // Generates key pair for Alice
-    let key = getKey();
-    let key_buffer = Buffer.from(key.replace("0x", ""), "hex")
-    
-    const alice = new AptosAccount(Uint8Array.from(key_buffer))
-    console.log("alice", alice.address());
+    let mnemonics = getMnemonics
+    const wallet = new AptosWeb3.WalletClient(NODE_URL, FAUCET_URL)
+    let aptosAccount = await wallet.getAccountFromMnemonic(mnemonics)
+    let addr = aptosAccount.address()
+    console.log("addr", aptosAccount.address());
     // Creates Alice's account and mint 5000 test coins
     // await faucetClient.fundAccount(alice.address(), 5000);
+    let collection = null
+    try {
+        collection = await wallet.getCollection(addr, collectionName)
+    } catch (e) {
+        console.log("no collection")
+    }
+    if (!collection) {
+        await wallet.createNFTCollection(mnemonics, collectionName, collectionDescription, collectionURL)
+        console.log("collection created")
+    } else {
+        console.log("collection already exists")
+    }
   
-    let resources = await client.getAccountResources(alice.address());
-    let accountResource = resources.find(
-      (r) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
-    );
-    console.log(
-      `Alice coins: ${accountResource.data.coin.value}`
-    );
-    
-    packageMetadata = packageMetadata.toString('hex')
-    packageMetadata = Uint8Array.from(Buffer.from(packageMetadata, "hex"))
-    moduleCode = moduleCode.toString('hex')
-    moduleCode = Uint8Array.from(Buffer.from(moduleCode, "hex"))
+    process.exit(0);
+  }
 
+  async function createCollection(alice, name, description, url) {
+    AptosWeb3.WalletClient()
+    console.log("Creating collection", alice.address(), name, description, url)
     const entryFunctionPayload =
       new TxnBuilderTypes.TransactionPayloadEntryFunction(
         TxnBuilderTypes.EntryFunction.natural(
           // Fully qualified module name, `AccountAddress::ModuleName`
-          `${alice.address()}::pool`,
+          `0x3::token`,
           // Module function
-          "initialize_script",
+          "create_collection_script",
           // The coin type to transfer
           [],
           // Arguments for function `transfer`: receiver account address and amount to transfer
           [
+            BCS.bcsSerializeStr(name),
+            BCS.bcsSerializeStr(description),
+            BCS.bcsSerializeStr(url),
+            BCS.bcsSerializeUint64(1000000000),
+            BCS.serializeVectorWithFunc([false, false, false], "serializeBool")
           ]
         )
       );
@@ -72,16 +84,8 @@ const {
   
     // // Wait for the transaction to finish
     await client.waitForTransaction(transactionRes.hash);
-  
-    // resources = await client.getAccountResources(bob.address());
-    // accountResource = resources.find(
-    //   (r) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
-    // );
-    // console.log(
-    //   `Bob coins: ${(accountResource?.data as any).coin.value}. Should be 717!`
-    // );
-  
-    process.exit(0);
+
+    console.log('done create collection')
   }
   
   main();

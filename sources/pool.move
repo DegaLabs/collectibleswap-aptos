@@ -18,7 +18,7 @@ module collectibleswap::pool {
 
     use collectibleswap::exponential;
     use collectibleswap::emergency::assert_no_emergency;
-    use collectibleswap::type_registry::assert_valid_cointype;
+    use collectibleswap::type_registry::{ assert_valid_cointype, register_script, is_valid_registration };
     use liquidity_account::liquidity_coin::LiquidityCoin;
     use collectibleswap::collectibleswap_lp_account;
 
@@ -164,6 +164,15 @@ module collectibleswap::pool {
         timestamp: u64
     }
 
+    struct NewPoolEventStore has key {
+        pool_created_handle: event::EventHandle<NewPool>
+    }
+
+    struct NewPool has store, drop {
+        coin_type_info: type_info::TypeInfo,
+        collection_coin_type_info: type_info::TypeInfo
+    }
+
     /// Stores resource account signer capability under Liquidswap account.
     struct PoolAccountCap has key { signer_cap: SignerCapability }
 
@@ -211,10 +220,14 @@ module collectibleswap::pool {
                     pool_type: u8,
                     asset_recipient: address,
                     delta: u64,
-                    property_version: u64) acquires Pool, PoolAccountCap {
+                    property_version: u64) acquires Pool, PoolAccountCap, NewPoolEventStore {
         // make sure pair does not exist already
         assert_no_emergency();
-        assert_valid_cointype<CollectionCoinType>(collection, token_creator);
+        if (!is_valid_registration<CoinType>(collection, token_creator)) {
+            register_script<CoinType>(account, collection, token_creator);
+        } else {
+            assert_valid_cointype<CollectionCoinType>(collection, token_creator);
+        };
         let (pool_account_address, pool_account_signer) = get_pool_account_signer();
         assert!(pool_type == POOL_TYPE_TRADING || pool_type == POOL_TYPE_TOKEN || pool_type == POOL_TYPE_COIN, INVALID_POOL_TYPE);
         assert!(curve_type == CURVE_LINEAR_TYPE || curve_type == CURVE_EXPONENTIAL_TYPE, INVALID_CURVE_TYPE);
@@ -322,7 +335,21 @@ module collectibleswap::pool {
                 timestamp: now_time
             }
         );
-        move_to(&pool_account_signer, events_store)
+        move_to(&pool_account_signer, events_store);
+
+        if (!exists<NewPoolEventStore>(pool_account_address)) {
+            move_to(&pool_account_signer, NewPoolEventStore {
+                pool_created_handle: account::new_event_handle<NewPool>(&pool_account_signer),
+            });
+        };
+        let new_pool_event_store = borrow_global_mut<NewPoolEventStore>(pool_account_address);
+        event::emit_event(
+            &mut new_pool_event_store.pool_created_handle,
+            NewPool {
+                coin_type_info: type_info::type_of<CoinType>(),
+                collection_coin_type_info: type_info::type_of<CollectionCoinType>()
+            }
+        )
     }
 
     public fun is_pool_exists<CoinType, CollectionCoinType>(): bool acquires PoolAccountCap {
@@ -368,7 +395,7 @@ module collectibleswap::pool {
                                     pool_type: u8,
                                     asset_recipient: address,
                                     delta: u64,
-                                    property_version: u64) acquires Pool, PoolAccountCap {
+                                    property_version: u64) acquires Pool, PoolAccountCap, NewPoolEventStore {
         create_new_pool<CoinType, CollectionCoinType>(account, collection, &token_names, token_creator, initial_spot_price, curve_type, pool_type, asset_recipient, delta, property_version)
     }
 
@@ -426,7 +453,7 @@ module collectibleswap::pool {
         liquidity
     }
 
-    public fun add_liquidity_script<CoinType, CollectionCoinType> (
+    public entry fun add_liquidity_script<CoinType, CollectionCoinType> (
                                     account: &signer,
                                     max_coin_amount: u64,
                                     token_names: vector<String>,
@@ -521,6 +548,14 @@ module collectibleswap::pool {
                                     min_nfts: u64,
                                     lp_amount: u64): (u64, vector<token::TokenId>) acquires Pool, PoolAccountCap, EventsStore {
         remove_liquidity<CoinType, CollectionCoinType>(account, min_coin_amount, min_nfts, lp_amount)
+    }
+
+    public entry fun remove_liquidity_script2<CoinType, CollectionCoinType> (
+                                    account: &signer,
+                                    min_coin_amount: u64, 
+                                    min_nfts: u64,
+                                    lp_amount: u64) acquires Pool, PoolAccountCap, EventsStore {
+        remove_liquidity<CoinType, CollectionCoinType>(account, min_coin_amount, min_nfts, lp_amount);
     }
 
     public fun swap_coin_to_any_tokens_script<CoinType, CollectionCoinType> (

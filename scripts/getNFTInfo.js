@@ -38,6 +38,24 @@ const {
     console.log(
       `Alice coins: ${accountResource.data.coin.value}`
     );
+  
+    // // Generates key pair for Bob
+    // const bob = new AptosAccount();
+    // // Creates Bob's account and mint 0 test coins
+    // await faucetClient.fundAccount(bob.address(), 0);
+  
+    // resources = await client.getAccountResources(bob.address());
+    // accountResource = resources.find(
+    //   (r) => r.type === "0x1::coin::CoinStore<0x1::aptos_coin::AptosCoin>"
+    // );
+    // console.log(
+    //   `Bob coins: ${(accountResource?.data as any).coin.value}. Should be 0!`
+    // );
+  
+    // // We need to pass a token type to the `transfer` function.
+    // const token = new TxnBuilderTypes.TypeTagStruct(
+    //   TxnBuilderTypes.StructTag.fromString("0x1::aptos_coin::AptosCoin")
+    // );
     
     packageMetadata = packageMetadata.toString('hex')
     packageMetadata = Uint8Array.from(Buffer.from(packageMetadata, "hex"))

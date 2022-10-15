@@ -14,12 +14,6 @@ const {
   
   const client = new AptosClient(NODE_URL);
   const faucetClient = new FaucetClient(NODE_URL, FAUCET_URL);
-  
-  let fs = require('fs')
-  let path = require('path')
-  let modulePath = "./liquidity_coin"
-  let packageMetadata = fs.readFileSync(path.join(modulePath, "build", "CollectibleSwapLP", "package-metadata.bcs"));
-  let moduleCode = fs.readFileSync(path.join(modulePath, "build", "CollectibleSwapLP", "bytecode_modules", "liquidity_coin.mv"));
 
   async function main() {
     // Generates key pair for Alice
@@ -38,11 +32,6 @@ const {
     console.log(
       `Alice coins: ${accountResource.data.coin.value}`
     );
-    
-    packageMetadata = packageMetadata.toString('hex')
-    packageMetadata = Uint8Array.from(Buffer.from(packageMetadata, "hex"))
-    moduleCode = moduleCode.toString('hex')
-    moduleCode = Uint8Array.from(Buffer.from(moduleCode, "hex"))
 
     const entryFunctionPayload =
       new TxnBuilderTypes.TransactionPayloadEntryFunction(
@@ -50,11 +39,13 @@ const {
           // Fully qualified module name, `AccountAddress::ModuleName`
           `${alice.address()}::pool`,
           // Module function
-          "initialize_script",
+          "create_new_pool_script",
           // The coin type to transfer
           [],
           // Arguments for function `transfer`: receiver account address and amount to transfer
           [
+            "0x2::aptos_coin::AptosCoin",
+            `${alice.address()}::type_regis`
           ]
         )
       );

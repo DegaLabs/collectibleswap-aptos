@@ -1,12 +1,16 @@
 [package]
-name = 'CollectibleSwapInit'
+name = 'upgrade_test'
 version = '0.1.0'
 upgrade_policy = 'compatible'
 
 [addresses]
 collectibleswap = "0xd39111acba9f96a14150674b359d564e566f8057143a0593723fe753fc67c3b2"
+mod1 = "0xc1af2fe04786cf2d951f8a30123140d392f6a5965ca1596f4865bb76ba4f3bad"
 
 [dependencies.AptosFramework]
 git = "https://github.com/aptos-labs/aptos-core.git"
 rev = "aptos-cli-v0.3.9"
 subdir = "aptos-move/framework/aptos-framework"
+
+[dependencies.CollectibleSwapInit]
+local = "../collectibleswap_init"
